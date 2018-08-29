@@ -3,6 +3,7 @@
   #:use-module (rnrs bytevectors)
   #:use-module (ice-9 receive)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 regex)
   #:use-module (ice-9 binary-ports))
 
 (define-class <stream> ()
@@ -139,6 +140,15 @@
   (vendor #:getter vendor #:init-keyword #:vendor)
   (comments #:accessor comments #:init-keyword #:comments))
 
+;; TODO: actually verify content vector format
+;; https://www.xiph.org/vorbis/doc/v-comment.html
+(define comment-content-rx (make-regexp "^([ [:alnum:][:punct:]]*)=(.*)$" regexp/newline))
+(define (parse-vorbis-comment-content bytestring)
+  (let ((comment-match (regexp-exec comment-content-rx (utf8->string bytestring))))
+    (when comment-match
+      (cons (string-upcase (match:substring comment-match 1))
+            (match:substring comment-match 2)))))
+
 (define (parse-vorbis-comment bv)
   (let* ((comments-length (bytevector-length bv))
          (vendor-string-length (bytevector-uint-ref bv 0 'little 4))
@@ -154,4 +164,4 @@
                  (comment-bytestring (make-bytevector comment-length)))
             (bytevector-copy! bv (+ 4 bytes-read) comment-bytestring 0 comment-length)
             (parse-comment (+ 4 comment-length bytes-read)
-                           (cons (utf8->string comment-bytestring) comments)))))))
+                           (cons (parse-vorbis-comment-content comment-bytestring) comments)))))))
