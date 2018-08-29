@@ -27,7 +27,6 @@
              (cons (parse-metadata-block type (get-bytevector-n port length))
                    metadata)))))))
 
-
 (define (read-header port)
   (parse-header (get-bytevector-n port 4)))
 
@@ -87,8 +86,7 @@
 
 (define-class <flac-seek-table> ()
   ; TODO: make array?
-  (seek-points #:accessor seek-points #:init-keyword #:seek-points)
-  )
+  (seek-points #:accessor seek-points #:init-keyword #:seek-points))
 
 (define-class <flac-seek-point> ()
   (sample-number #:accessor sample-number #:init-keyword #:sample-number)
@@ -141,14 +139,21 @@
   (vendor #:getter vendor #:init-keyword #:vendor)
   (comments #:accessor comments #:init-keyword #:comments))
 
-;(define (parse-vorbis-comment bv)
-;  (let* ((vendor-string-length (bytevector-uint-ref bv 0 'big 4))
-;         (num-comments (bytevector-uint-ref bv vendor-string-length 'big 32)))
-;    (let parse-comment ((comment-num 0)
-;                        (comment-offset (+ 8 vendor-string-length))
-;                        (comments '()))
-;      (if (= num-comments comment-num)
-;          (make <vorbis-comment>
-;            #:vendor (bytevector-uint-ref bv 4 'big vendor-string-length)
-;            #:comments comments)
-;          (let ((comment-length (bytevector-uint-ref bv comment-offset 'big 4))))
+(define (parse-vorbis-comment bv)
+  (let* ((comments-length (bytevector-length bv))
+         (vendor-string-length (bytevector-uint-ref bv 0 'little 4))
+         (num-comments (bytevector-uint-ref bv (+ 4 vendor-string-length) 'little 4)))
+    (display (+ 8 vendor-string-length))
+    (newline)
+    (let parse-comment ((bytes-read (+ 8 vendor-string-length))
+                        (comments '()))
+      (if (= comments-length bytes-read)
+          (let ((vendor-bytestring (make-bytevector vendor-string-length)))
+            (make <vorbis-comment>
+              #:vendor (utf8->string vendor-bytestring)
+              #:comments comments))
+          (let* ((comment-length (bytevector-uint-ref bv bytes-read 'little 4))
+                 (comment-bytestring (make-bytevector comment-length)))
+            (bytevector-copy! bv (+ 4 bytes-read) comment-bytestring 0 comment-length)
+            (parse-comment (+ 4 comment-length bytes-read)
+                           (cons (utf8->string comment-bytestring) comments)))))))
