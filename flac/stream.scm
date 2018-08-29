@@ -143,8 +143,6 @@
   (let* ((comments-length (bytevector-length bv))
          (vendor-string-length (bytevector-uint-ref bv 0 'little 4))
          (num-comments (bytevector-uint-ref bv (+ 4 vendor-string-length) 'little 4)))
-    (display (+ 8 vendor-string-length))
-    (newline)
     (let parse-comment ((bytes-read (+ 8 vendor-string-length))
                         (comments '()))
       (if (= comments-length bytes-read)
