@@ -1,15 +1,16 @@
 (define-module (flac stream)
   #:use-module (oop goops)
   #:use-module (rnrs bytevectors)
+  #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-9 gnu)
   #:use-module (ice-9 receive)
   #:use-module (ice-9 match)
   #:use-module (ice-9 regex)
   #:use-module (ice-9 binary-ports))
 
 (define-class <stream> ()
-  (info #:class <protected-slot> #:getter info #:init-value '())
-  (metadata #:getter metadata #:init-value '())
-  (frames #:getter frames #:init-value '()))
+  (metadata #:getter metadata #:init-value '() #:init-keyword #:metadata)
+  (frames #:getter frames #:init-value '() #:init-keyword #:frames))
 
 (define-class <file-stream> (<stream>)
   (port #:class <protected-slot>))
@@ -17,19 +18,29 @@
 (define FLAC-MARKER-LENGTH 4)
 (define FLAC-MARKER #vu8(102 76 97 67)) ; fLaC
 
-(define (read-stream port)
+;;; TODO: make sure other formats are handled gracefully
+;;; such as ID3 and WAV
+(define (read-magic port)
   (let ((magic? (get-bytevector-n port 4)))
-    (let read-metadata-block ((metadata '()))
-      (receive (last? type length)
-          (read-header port)
-        (if last?
-            metadata
-            (read-metadata-block
-             (cons (parse-metadata-block type (get-bytevector-n port length))
-                   metadata)))))))
+    magic?))
 
-(define (read-header port)
-  (parse-header (get-bytevector-n port 4)))
+(define (read-metadata port)
+  (let read-metadata-block ((metadata '()))
+    (receive (last? type length)
+        (parse-header (get-bytevector-n port 4))
+      (if last?
+          (append! metadata (list (parse-metadata-block type (get-bytevector-n port length))))
+          (read-metadata-block
+           (append! metadata (list (parse-metadata-block type (get-bytevector-n port length)))))))))
+
+(define (read-frames port)
+  '(frames))
+
+(define (read-stream port)
+  (read-magic port)
+  (make <stream>
+    #:metadata (read-metadata port)
+    #:frames (read-frames port)))
 
 (define (parse-metadata-block type data)
   (eval `(,(string->symbol (string-append "parse-" (symbol->string type))) ,data) (current-module)))
@@ -52,8 +63,13 @@
 (define (parse-invalid bv)
   'invalid)
 
+(define-record-type <flac-padding>
+  (make-flac-padding length)
+  flac-padding?
+  (length padding-length))
+
 (define (parse-padding bv)
-  'padding)
+  (make-flac-padding (bytevector-length bv)))
 
 (define (parse-application bv)
   ; we dont' do anything with application data yet
@@ -74,71 +90,82 @@
 
 (define (parse-stream-info bv)
   (let ((sample/channel-data (bytevector-uint-ref bv 10 'big 8)))
-    (make <flac-stream-info>
-      #:min-block (bytevector-uint-ref bv 0 'big 2)
-      #:max-block (bytevector-uint-ref bv 2 'big 2)
-      #:min-frame (bytevector-uint-ref bv 4 'big 3)
-      #:max-frame (bytevector-uint-ref bv 7 'big 3)
-      #:samples (bit-extract sample/channel-data 0 36)
-      #:bps (+ 1 (bit-extract sample/channel-data 36 41))
-      #:channels (+ 1 (bit-extract sample/channel-data 41 45))
-      #:sample-rate (bit-extract sample/channel-data 45 65)
-      #:md5 (number->string (bytevector-uint-ref bv 18 'big 16) 16))))
+    (make-flac-stream-info
+     (bytevector-uint-ref bv 0 'big 2)
+     (bytevector-uint-ref bv 2 'big 2)
+     (bytevector-uint-ref bv 4 'big 3)
+     (bytevector-uint-ref bv 7 'big 3)
+     (bit-extract sample/channel-data 0 36)
+     (+ 1 (bit-extract sample/channel-data 36 41))
+     (+ 1 (bit-extract sample/channel-data 41 45))
+     (bit-extract sample/channel-data 45 65)
+     (number->string (bytevector-uint-ref bv 18 'big 16) 16))))
 
-(define-class <flac-seek-table> ()
-  ; TODO: make array?
-  (seek-points #:accessor seek-points #:init-keyword #:seek-points))
+(define-record-type <flac-seek-table>
+  (make-flac-seek-table seek-points)
+  flac-seek-table?
+  (seek-points seek-table-seek-points))
 
-(define-class <flac-seek-point> ()
-  (sample-number #:accessor sample-number #:init-keyword #:sample-number)
-  (stream-offset #:accessor stream-offset #:init-keyword #:stream-offset)
-  (frame-samples #:accessor frame-samples #:init-keyword #:frame-samples))
+(set-record-type-printer! <flac-seek-table>
+                          (λ (flac-seek-table port)
+                            (format port "#<<flac-seek-table> seek-points: ~a>"
+                                    (length (seek-table-seek-points flac-seek-table)))))
 
-(define-method (write (fst <flac-seek-table>) port)
-  (format port "#<<flac-seek-table> ~a>" (length (seek-points fst))))
-
-(define-method (display (fst <flac-seek-table>) port)
-  (format port "#<<flac-seek-table> ~a>" (length (seek-points fst))))
+(define-record-type <flac-seek-point>
+  (make-flac-seek-point sample-number stream-offset frame-samples)
+  flac-seek-point?
+  (sample-number seek-point-sample-number)
+  (stream-offset seek-point-stream-offset)
+  (frame-samples seek-point-frame-samples))
 
 (define (parse-seek-table bv)
   (let ((seek-table-length (bytevector-length bv)))
     (let parse-seek-point ((seek-points '())
                            (bytes-read 0))
       (if (= seek-table-length bytes-read)
-          (make <flac-seek-table> #:seek-points seek-points)
+          (make-flac-seek-table seek-points)
           (parse-seek-point
            (append! seek-points
-                    (list (make <flac-seek-point>
-                            #:sample-number (bytevector-uint-ref bv bytes-read 'big 8)
-                            #:stream-offset (bytevector-uint-ref bv (+ bytes-read 8) 'big 8)
-                            #:frame-samples (bytevector-uint-ref bv (+ bytes-read 16) 'big 2))))
+                    (list (make-flac-seek-point
+                           (bytevector-uint-ref bv bytes-read 'big 8)
+                           (bytevector-uint-ref bv (+ bytes-read 8) 'big 8)
+                           (bytevector-uint-ref bv (+ bytes-read 16) 'big 2))))
            (+ 18 bytes-read))))))
 
-(define-class <flac-application> ()
-  (id #:accessor id #:init-keyword #:id)
-  (data #:accessor data #:init-keyword #:data))
+(define-record-type <flac-application>
+  (make-flac-application id data)
+  flac-application?
+  (id application-id)
+  (data application-data))
 
-(define-class <flac-stream-info> ()
-  (min-block #:class <int-slot> #:getter min-block #:init-keyword #:min-block)
-  (max-block #:class <int-slot> #:getter max-block #:init-keyword #:max-block)
-  (min-frame #:class <int-slot> #:getter min-frame #:init-keyword #:min-frame)
-  (max-frame #:class <int-slot> #:getter max-frame #:init-keyword #:max-frame)
-  (sample-rate #:class <int-slot> #:getter sample-rate #:init-keyword #:sample-rate)
-  (channels #:class <int-slot> #:getter channels #:init-keyword #:channels)
-  (total-samples #:class <int-slot> #:getter total-samples #:init-keyword #:samples)
-  (bits-per-sample #:class <int-slot> #:getter bits-per-sample #:init-keyword #:bps)
-  (md5sum #:getter md5 #:init-keyword #:md5))
+(define-record-type <flac-stream-info>
+  (make-flac-stream-info
+   min-block max-block min-frame max-frame sample-rate channels total-samples bits-per-sample md5sum)
+  flac-stream-info?
+  (min-block stream-min-block)
+  (max-block stream-max-block)
+  (min-frame stream-min-frame)
+  (max-frame stream-max-frame)
+  (sample-rate stream-sample-rate)
+  (channels steram-channels)
+  (total-samples stream-total-samples)
+  (bits-per-sample stream-bits-per-sample)
+  (md5sum stream-md5sum))
 
+(set-record-type-printer! <flac-stream-info>
+                          (λ (vorbis-comment port)
+                            (format port "#<<flac-stream-info>>")))
 
-(define-method (write (fsi <flac-stream-info>) port)
-  (format port "#<<flac-stream-info>>"))
+(define-record-type <vorbis-comment>
+  (make-vorbis-comment vendor comments)
+  vorbis-comment?
+  (vendor vorbis-comment-vendor set-vorbis-comment-vendor!)
+  (comments vorbis-comment-comments set-vorbis-comment-comments!))
 
-(define-method (display (fsi <flac-stream-info>) port)
-  (format port "#<<flac-stream-info>>"))
-
-(define-class <vorbis-comment> ()
-  (vendor #:getter vendor #:init-keyword #:vendor)
-  (comments #:accessor comments #:init-keyword #:comments))
+(set-record-type-printer! <vorbis-comment>
+                          (λ (vorbis-comment port)
+                            (format port "#<<vorbis-comment> comments: ~a>"
+                                    (length (vorbis-comment-comments vorbis-comment)))))
 
 ;; TODO: actually verify content vector format
 ;; https://www.xiph.org/vorbis/doc/v-comment.html
@@ -157,9 +184,10 @@
                         (comments '()))
       (if (= comments-length bytes-read)
           (let ((vendor-bytestring (make-bytevector vendor-string-length)))
-            (make <vorbis-comment>
-              #:vendor (utf8->string vendor-bytestring)
-              #:comments comments))
+            (bytevector-copy! bv 4 vendor-bytestring 0 vendor-string-length)
+            (make-vorbis-comment
+             (utf8->string vendor-bytestring)
+             comments))
           (let* ((comment-length (bytevector-uint-ref bv bytes-read 'little 4))
                  (comment-bytestring (make-bytevector comment-length)))
             (bytevector-copy! bv (+ 4 bytes-read) comment-bytestring 0 comment-length)
