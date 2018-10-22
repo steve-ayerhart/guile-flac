@@ -36,7 +36,7 @@
   '(frames))
 
 (define (parse-frame-header bv)
-  (let))
+  '(header))
 
 (define (read-stream port)
   (read-magic port)
@@ -97,10 +97,10 @@
      (bytevector-uint-ref bv 2 'big 2)
      (bytevector-uint-ref bv 4 'big 3)
      (bytevector-uint-ref bv 7 'big 3)
+     (bit-extract sample/channel-data 44 65)
+     (+ 1 (bit-extract sample/channel-data 41 44))
      (bit-extract sample/channel-data 0 36)
      (+ 1 (bit-extract sample/channel-data 36 41))
-     (+ 1 (bit-extract sample/channel-data 41 45))
-     (bit-extract sample/channel-data 45 65)
      (number->string (bytevector-uint-ref bv 18 'big 16) 16))))
 
 (define (parse-seek-table bv)
@@ -136,7 +136,7 @@
       (if (= comments-length bytes-read)
           (let ((vendor-bytestring (make-bytevector vendor-string-length)))
             (bytevector-copy! bv 4 vendor-bytestring 0 vendor-string-length)
-            (make-vorbis-comment
+            (make-flac-vorbis-comment
              (utf8->string vendor-bytestring)
              comments))
           (let* ((comment-length (bytevector-uint-ref bv bytes-read 'little 4))

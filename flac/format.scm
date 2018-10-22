@@ -65,7 +65,7 @@
 
 (define flac-max-metadata-type-code 126)
 (define flac-min-block-size 16)
-(define flac-max-block-size 65535u)
+(define flac-max-block-size 65535)
 (define flac-subset-max-block-size 4608)
 (define flac-max-channels 8)
 (define flac-min-bits-per-sample 4)
