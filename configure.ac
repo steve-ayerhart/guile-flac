@@ -1,0 +1,35 @@
+AC_INIT([Guile Flac], [0.1], [steve@ayerh.art],
+[guile-flac],
+[https://git.bonerbonerboner.com])
+
+AC_CONFIG_MACRO_DIRS([m4])
+AC_CONFIG_AUX_DIR([build-aux])
+AC_CONFIG_HEADER([config.h])
+
+AM_INIT_AUTOMAKE
+
+AC_PROG_CC
+
+dnl libtool
+AC_LIBTOOL_DLOPEN
+AC_DISABLE_STATIC
+AC_PROG_LIBTOOL
+
+dnl guile
+GUILE_PKG([2.2])
+GUILE_PROGS
+GUILE_FLAGS
+GUILE_SITE_DIR
+AC_SUBST(GUILE_LIBS)
+AC_SUBST(GUILE_CFLAGS)
+
+dnl flac
+PKG_CHECK_MODULES(FLAC, flac >= 1.0)
+AC_SUBST(FLAC_LIBS)
+AC_SUBST(FLAC_CLFAGS)
+
+LT_INIT()
+
+AC_CONFIG_FILES([Makefile src/Makefile])
+
+AC_OUTPUT
