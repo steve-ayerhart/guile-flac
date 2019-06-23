@@ -205,6 +205,17 @@ SCM_DEFINE (scm_metadata_get_streaminfo, "%flac-metadata-get-stream-info", 1, 0,
 
 // VORBIS COMMENT
 
+SCM_DEFINE (scm_vorbis_comment_display, "%vorbis-comment-display", 2, 0, 0,
+            (SCM scm_vorbis_comment, SCM scm_port),
+            "")
+{
+  FLAC__StreamMetadata *stream_metadata = FLAC_METADATA_GET_INSTANCE (scm_vorbis_comment);
+
+  scm_simple_format (scm_port,
+                     scm_from_utf8_string ("#<<vorbis-comment> (~A)>"),
+                     scm_list_1 (scm_from_uint32 (stream_metadata->data.vorbis_comment.num_comments)));
+}
+
 SCM_DEFINE (scm_vorbis_comment_get_vendor_string, "%vorbis-comment-get-vendor-string", 1, 0, 0,
             (SCM scm_vorbis_comment),
             "")
@@ -234,8 +245,6 @@ SCM_DEFINE (scm_vorbis_comment_get_comments, "%vorbis-comment-get-comments", 1, 
       FLAC__bool status;
       FLAC__StreamMetadata_VorbisComment_Entry entry;
       SCM scm_name_value_pair;
-      SCM scm_value;
-      SCM scm_value_number;
 
       status =
         FLAC__metadata_object_vorbiscomment_entry_to_name_value_pair (stream_metadata->data.vorbis_comment.comments[index],
@@ -251,15 +260,8 @@ SCM_DEFINE (scm_vorbis_comment_get_comments, "%vorbis-comment-get-comments", 1, 
           return SCM_BOOL_F;
         }
 
-      scm_value = scm_take_locale_string (value);
-
-      // try to convert numbers
-      scm_value_number = scm_string_to_number (scm_value, scm_from_uint (10));
-      if (scm_is_true (scm_value_number))
-        scm_value = scm_value_number;
-
       scm_name_value_pair = scm_cons (scm_take_locale_symbol (name),
-                                      scm_value);
+                                      scm_take_locale_string (value));
 
       scm_comments_list = scm_append (scm_list_2 (scm_comments_list,
                                                   scm_list_1 (scm_name_value_pair)));

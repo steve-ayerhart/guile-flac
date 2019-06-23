@@ -107,3 +107,9 @@
             #:slot-set! (λ (a b) #f))
   #:metaclass <stream-metadata-class>
   #:type 4)
+
+(define-method (write (vorbis-comment <vorbis-comment>) port)
+  (%vorbis-comment-display vorbis-comment port))
+
+(define-method (display (vorbis-comment <vorbis-comment>) port)
+  (%vorbis-comment-display vorbis-comment port))
