@@ -203,6 +203,105 @@ SCM_DEFINE (scm_metadata_get_streaminfo, "%flac-metadata-get-stream-info", 1, 0,
   return scm_stream_info_instance;
 }
 
+// VORBIS COMMENT
+
+SCM_DEFINE (scm_vorbis_comment_get_vendor_string, "%vorbis-comment-get-vendor-string", 1, 0, 0,
+            (SCM scm_vorbis_comment),
+            "")
+{
+  FLAC__StreamMetadata *stream_metadata = FLAC_METADATA_GET_INSTANCE (scm_vorbis_comment);
+  SCM scm_vendor_string_bv;
+
+  scm_vendor_string_bv =
+    scm_pointer_to_bytevector (scm_from_pointer ((void *) stream_metadata->data.vorbis_comment.vendor_string.entry, NULL),
+                               scm_from_uint32 (stream_metadata->data.vorbis_comment.vendor_string.length),
+                               scm_from_uint (0),
+                               scm_from_utf8_symbol ("u8"));
+  return scm_utf8_to_string (scm_vendor_string_bv);
+}
+
+SCM_DEFINE (scm_vorbis_comment_get_comments, "%vorbis-comment-get-comments", 1, 0, 0,
+            (SCM scm_vorbis_comment),
+            "")
+{
+  FLAC__StreamMetadata *stream_metadata = FLAC_METADATA_GET_INSTANCE (scm_vorbis_comment);
+  SCM scm_comments_list = SCM_EOL;
+
+  for (int index = 0; index < stream_metadata->data.vorbis_comment.num_comments; index++)
+    {
+      char *name;
+      char *value;
+      FLAC__bool status;
+      FLAC__StreamMetadata_VorbisComment_Entry entry;
+      SCM scm_name_value_pair;
+      SCM scm_value;
+      SCM scm_value_number;
+
+      status =
+        FLAC__metadata_object_vorbiscomment_entry_to_name_value_pair (stream_metadata->data.vorbis_comment.comments[index],
+                                                                      &name,
+                                                                      &value);
+
+      if (status == false)
+        {
+          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
+                     NULL,
+                     NULL,
+                     SCM_EOL, SCM_EOL);
+          return SCM_BOOL_F;
+        }
+
+      scm_value = scm_take_locale_string (value);
+
+      // try to convert numbers
+      scm_value_number = scm_string_to_number (scm_value, scm_from_uint (10));
+      if (scm_is_true (scm_value_number))
+        scm_value = scm_value_number;
+
+      scm_name_value_pair = scm_cons (scm_take_locale_symbol (name),
+                                      scm_value);
+
+      scm_comments_list = scm_append (scm_list_2 (scm_comments_list,
+                                                  scm_list_1 (scm_name_value_pair)));
+    }
+
+  return scm_comments_list;
+}
+
+SCM_DEFINE (scm_metadata_get_tags, "%flac-metadata-get-tags", 1, 0, 0,
+            (SCM scm_path),
+            "")
+{
+  FLAC__StreamMetadata *stream_metadata;
+  FLAC__bool status;
+  char *path;
+  SCM scm_stream_info_instance;
+
+  scm_dynwind_begin (0);
+
+  scm_stream_info_instance = scm_call_1 (scm_make_instance,
+                                         scm_variable_ref (scm_c_lookup ("<vorbis-comment>")));
+  stream_metadata = (FLAC__StreamMetadata *) SCM_STRUCT_DATA_REF (scm_stream_info_instance, 0);
+  path = scm_to_locale_string (scm_path);
+
+  scm_dynwind_free (path);
+
+  status = FLAC__metadata_get_tags (path, &stream_metadata);
+
+  scm_dynwind_end ();
+
+  if (status == false)
+    scm_error (scm_from_locale_symbol ("memory-allocation-error"),
+               NULL,
+               NULL,
+               SCM_EOL, SCM_EOL);
+
+
+  SCM_STRUCT_DATA (scm_stream_info_instance)[0] = (scm_t_bits) stream_metadata;
+
+  return scm_stream_info_instance;
+}
+
 
 void
 guile_flac_metadata_init (void)

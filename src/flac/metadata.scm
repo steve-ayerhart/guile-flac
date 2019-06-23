@@ -96,5 +96,14 @@
   #:type 0)
 
 (define-class <vorbis-comment> (<stream-metadata>)
+  (vendor-string #:allocation #:virtual
+                 #:accessor vendor-string
+                 #:slot-ref %vorbis-comment-get-vendor-string
+                 #:slot-set! (λ (a b) #f))
+
+  (comments #:allocation #:virtual
+            #:accessor comments
+            #:slot-ref %vorbis-comment-get-comments
+            #:slot-set! (λ (a b) #f))
   #:metaclass <stream-metadata-class>
   #:type 4)
