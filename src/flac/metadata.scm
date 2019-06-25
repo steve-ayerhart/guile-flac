@@ -104,7 +104,7 @@
   (comments #:allocation #:virtual
             #:accessor comments
             #:slot-ref %vorbis-comment-get-comments
-            #:slot-set! (λ (a b) #f))
+            #:slot-set! %vorbis-comment-set-comments!)
   #:metaclass <stream-metadata-class>
   #:type 4)
 

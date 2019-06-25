@@ -270,6 +270,70 @@ SCM_DEFINE (scm_vorbis_comment_get_comments, "%vorbis-comment-get-comments", 1, 
   return scm_comments_list;
 }
 
+SCM_DEFINE (scm_vorbis_comment_set_comments, "%vorbis-comment-set-comments!", 2, 0, 0,
+            (SCM scm_vorbis_comment, SCM scm_comments),
+            "")
+{
+  FLAC__StreamMetadata *stream_metadata = FLAC_METADATA_GET_INSTANCE (scm_vorbis_comment);
+  unsigned int num_comments = scm_to_uint (scm_length (scm_comments));
+  FLAC__bool status;
+
+  if (num_comments != stream_metadata->data.vorbis_comment.num_comments)
+    {
+      status = FLAC__metadata_object_vorbiscomment_resize_comments (stream_metadata, num_comments);
+
+      if (status == false)
+        {
+          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
+                     NULL,
+                     NULL,
+                     SCM_EOL, SCM_EOL);
+          return SCM_BOOL_F;
+        }
+    }
+
+
+  for (int index = 0; index < num_comments; index++)
+    {
+      scm_dynwind_begin (0);
+
+      FLAC__StreamMetadata_VorbisComment_Entry entry;
+      SCM scm_pair = scm_list_ref (scm_comments, scm_from_int (index));
+      char *name = scm_to_stringn (scm_symbol_to_string (scm_car (scm_pair)),
+                                   NULL, "ASCII", SCM_FAILED_CONVERSION_QUESTION_MARK);
+      char *value = scm_to_utf8_stringn (scm_cdr (scm_pair), NULL);
+
+      scm_dynwind_free (name);
+      scm_dynwind_free (value);
+
+      status = FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair (&entry, name, value);
+
+      if (status == false)
+        {
+          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
+                     NULL,
+                     NULL,
+                     SCM_EOL, SCM_EOL);
+          return SCM_BOOL_F;
+        }
+
+      status = FLAC__metadata_object_vorbiscomment_set_comment (stream_metadata, index, entry, /*copy=*/true);
+
+      if (status == false)
+        {
+          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
+                     NULL,
+                     NULL,
+                     SCM_EOL, SCM_EOL);
+          return SCM_BOOL_F;
+        }
+
+      scm_dynwind_end ();
+    }
+
+  return SCM_UNSPECIFIED;
+}
+
 SCM_DEFINE (scm_metadata_get_tags, "%flac-metadata-get-tags", 1, 0, 0,
             (SCM scm_path),
             "")
