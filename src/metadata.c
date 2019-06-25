@@ -60,8 +60,8 @@ SCM_DEFINE (scm_protect_stream_metadata_class, "%protect-stream-metadata-class!"
 }
 
 SCM_DEFINE (scm_initialize_stream_metadata_class, "%initialize-stream-metadata-class!", 2, 0, 0,
-           (SCM scm_metadata_class, SCM scm_args),
-           "")
+            (SCM scm_metadata_class, SCM scm_args),
+            "")
 {
   SCM scm_type = SCM_UNDEFINED;
 
@@ -78,8 +78,8 @@ SCM_DEFINE (scm_initialize_stream_metadata_class, "%initialize-stream-metadata-c
 }
 
 SCM_DEFINE (scm_allocate_flac_metadata, "%allocate-stream-metadata-class", 2, 0, 0,
-           (SCM scm_metadata_class, SCM scm_metadata_instance),
-           "")
+            (SCM scm_metadata_class, SCM scm_metadata_instance),
+            "")
 {
   FLAC__StreamMetadata *stream_metadata;
   FLAC__MetadataType metadata_type;
@@ -282,16 +282,8 @@ SCM_DEFINE (scm_vorbis_comment_set_comments, "%vorbis-comment-set-comments!", 2,
     {
       status = FLAC__metadata_object_vorbiscomment_resize_comments (stream_metadata, num_comments);
 
-      if (status == false)
-        {
-          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
-                     NULL,
-                     NULL,
-                     SCM_EOL, SCM_EOL);
-          return SCM_BOOL_F;
-        }
+      if (status == false) goto allocation_error;
     }
-
 
   for (int index = 0; index < num_comments; index++)
     {
@@ -308,30 +300,21 @@ SCM_DEFINE (scm_vorbis_comment_set_comments, "%vorbis-comment-set-comments!", 2,
 
       status = FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair (&entry, name, value);
 
-      if (status == false)
-        {
-          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
-                     NULL,
-                     NULL,
-                     SCM_EOL, SCM_EOL);
-          return SCM_BOOL_F;
-        }
+      if (status == false) goto allocation_error;
 
       status = FLAC__metadata_object_vorbiscomment_set_comment (stream_metadata, index, entry, /*copy=*/true);
 
-      if (status == false)
-        {
-          scm_error (scm_from_locale_symbol ("memory-allocation-error"),
-                     NULL,
-                     NULL,
-                     SCM_EOL, SCM_EOL);
-          return SCM_BOOL_F;
-        }
+      if (status == false) goto allocation_error;
 
       scm_dynwind_end ();
     }
 
   return SCM_UNSPECIFIED;
+
+ allocation_error:
+  scm_error (scm_from_locale_symbol ("memory-allocation-error"), NULL, NULL, SCM_EOL, SCM_EOL);
+
+  return SCM_BOOL_F;
 }
 
 SCM_DEFINE (scm_metadata_get_tags, "%flac-metadata-get-tags", 1, 0, 0,
@@ -372,9 +355,9 @@ SCM_DEFINE (scm_metadata_get_tags, "%flac-metadata-get-tags", 1, 0, 0,
 void
 guile_flac_metadata_init (void)
 {
-  #ifndef SCM_MAGIC_SNARFER
-  #include "metadata.x"
-  #endif
+#ifndef SCM_MAGIC_SNARFER
+#include "metadata.x"
+#endif
 
   scm_c_define ("flac-version", scm_from_locale_string (FLAC__VERSION_STRING));
   scm_c_define ("flac-vendor", scm_from_locale_string (FLAC__VENDOR_STRING));
