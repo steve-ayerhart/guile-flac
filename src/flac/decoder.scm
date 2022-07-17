@@ -1,6 +1,13 @@
 (define-module (flac decoder)
   #:use-module (flac reader)
-  #:use-module (flac format))
+  #:use-module (flac format)
+
+  #:use-module (srfi srfi-42)
+
+  #:use-module (rnrs arithmetic bitwise)
+
+  #:use-module (ice-9 match)
+  #:use-module (ice-9 receive))
 
 (define (read/assert-frame-sync-code)
   (unless (= #b111111111111100 (flac-read-uint 15))
@@ -61,7 +68,85 @@
     [(#b110) 24]
     [(#b111) 'reserved]))
 
-(define (read-frame-header stream-info)
+(define (read/assert-subframe-sync)
+  (when (= 1 (flac-read-uint 1))
+    (error "invalid subframe sync")))
+
+(define (read-subframe-wasted-bits)
+  (if (= 1 (flac-read-uint 1))
+      (let wasted-loop ([unary 0])
+        (if (= 0 (flac-read-uint 1))
+            (wasted-loop (+ 1 unary))
+            (+ 1 unary)))
+      0))
+
+(define (calculate-sample-depth bps wasted-bits channel-assignment channel)
+  (+ (- bps wasted-bits)
+     (match channel-assignment
+       ('left  (if (= channel 1) 1 0))
+       ('right (if (= channel 0) 1 0))
+       ('mid   (if (= channel 1) 1 0))
+       (_ 0))))
+
+(define (read-subframe-constant blocksize sample-depth wasted-bits)
+  (%make-subframe-constant (make-list blocksize (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
+
+(define (read-subframe-verbatim blocksize sample-depth wasted-bits)
+  (%make-subframe-verbatim
+   (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
+
+(define (read-subframe-fixed) #f)
+
+(define (read-subframe-lpc) #f)
+
+;;; 000000 constant
+;;; 000001 verbatim
+;;; 00001x reserved
+;;; 0001xx reserved
+;;; 001xxx if xxx <= 4 fixed, xxx = order ; else reserved
+;;; 01xxxx reserved
+;;; 1xxxxx lpc xxxxx = order - 1
+(define (read-subframe-type)
+  (let ([raw (flac-read-uint 6)])
+    (cond
+     [(= raw #b000000) (values #f 'constant)]
+     [(= raw #b000001) (values #f 'verbatim)]
+     [(between? raw #b0010000 #b001100) (values (bit-extract raw 0 4) 'fixed)]
+     [(between? raw #b1000000 #b111111) (values (bit-extract raw 0 6) 'lpc)]
+     (else (values #f #f)))))
+
+(define (read-subframe-header)
+  (read/assert-subframe-sync)
+  (receive (order type)
+      (read-subframe-type)
+    (%make-subframe-header type order (read-subframe-wasted-bits))))
+
+(define (read-subframe frame-header channel)
+  (let* ([subframe-header (read-subframe-header)]
+         [wasted-bits (subframe-header-wasted-bits subframe-header)]
+         [sample-depth (calculate-sample-depth
+                        (frame-header-bits-per-sample frame-header)
+                        wasted-bits
+                        (frame-header-channel-assignment frame-header)
+                        channel)]
+         [blocksize (frame-header-blocksize frame-header)])
+    (%make-subframe
+     subframe-header
+     (match (subframe-header-subframe-type subframe-header)
+       ('constant (read-subframe-constant blocksize sample-depth wasted-bits))
+       ('verbatim (read-subframe-verbatim blocksize sample-depth wasted-bits))
+       ('fixed (read-subframe-fixed))
+       ('lpx (read-subframe-lpc))))))
+
+(define (read-subframes stream-info frame-header)
+  (let ([channels (stream-info-channels stream-info)])
+    (map
+     (λ (header channel)
+       (read-subframe header channel))
+     (make-list channels frame-header)
+     (iota channels))))
+
+(define-public (read-frame-header stream-info)
   (read/assert-frame-sync-code)
   (let* ([blocking-strategy (decode-blocking-strategy (flac-read-uint 1))]
          [raw-blocksize (flac-read-uint 4)]
@@ -81,3 +166,11 @@
      bits-per-sample
      frame/sample-number
      crc)))
+
+(define (read-frame-footer) #f)
+
+(define-public (read-flac-frame stream-info)
+  (let* ([header (read-frame-header stream-info)]
+         [subframes (read-subframes stream-info header)]
+         [footer (read-frame-footer)])
+    (%make-frame header subframes footer)))

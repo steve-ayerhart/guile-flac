@@ -58,21 +58,28 @@
    (flac-read-uint 32)
    (flac-read-bytes (flac-read-uint 32))))
 
+(define (add-picture! metadata)
+  (if (flac-metadata-pictures metadata)
+      (set-flac-metadata-pictures!
+       metadata
+       (cons (read-metadata-block-picture)
+             (flac-metadata-pictures metadata)))
+      (set-flac-metadata-pictures!
+       metadata
+       (list (read-metadata-block-picture)))))
+
 (define (read-metadata-block metadata length type)
   (match type
     ('stream-info (set-flac-metadata-stream-info! metadata (read-metadata-block-stream-info)))
     ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table length)))
     ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
-    ('picture (set-flac-metadata-pictures!
-               metadata
-               (cons (read-metadata-block-picture)
-                     (flac-metadata-pictures metadata))))
+    ('picture (add-picture! metadata))
     ('padding (set-flac-metadata-padding! metadata (read-metadata-block-padding length))))
   metadata)
 
 (define (read-flac-metadata)
   (flac-read/assert-magic)
-  (let metadata-loop ((metadata (make-flac-metadata #f #f #f #f #f #f '()))
+  (let metadata-loop ((metadata (make-flac-metadata #f #f #f #f #f #f #f))
                       (header (read-metadata-block-header)))
     (if (metadata-block-header-last? header)
         (read-metadata-block metadata (metadata-block-header-length header) (metadata-block-header-type header))
@@ -100,9 +107,10 @@
   (with-flac-input-port port
    (λ ()
      (if (symbol? type)
-        (read-flac-metadata-type type)
-        (read-flac-metadata)))))
+         (read-flac-metadata-type type)
+         (read-flac-metadata)))))
 
 (define* (flac-file-metadata filename #:optional (type #f))
   (with-flac-input-port (open-input-file filename #:binary #t)
-   (λ () (flac-metadata (current-input-port) type)) #:binary #t))
+   (λ ()
+     (flac-metadata (current-input-port) type))))

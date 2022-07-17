@@ -8,6 +8,7 @@
   #:use-module (rnrs arithmetic bitwise)
 
   #:export (flac-read-uint
+            flac-read-sint
             flac-read-bytes
             flac-read-coded-number
             with-flac-input-port
@@ -60,6 +61,10 @@
 
 (define (flac-read-uint bits)
   (flac-read-bits (current-flac-reader) bits))
+
+(define (flac-read-sint bits)
+  (let ([uint (flac-read-uint bits)])
+    (- uint (bitwise-arithmetic-shift (bitwise-arithmetic-shift-right uint (- bits 1)) bits))))
 
 (define (flac-read/assert-magic)
   (unless (= FLAC-MAGIC (flac-read-uint 32))

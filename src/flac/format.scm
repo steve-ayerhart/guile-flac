@@ -18,6 +18,22 @@
             frame-header-channel-assignment frame-header-bits-per-sample
             frame-header-frame/sample-number frame-header-crc
 
+            %make-subframe
+            subframe-header subframe-data
+
+            %make-subframe-header
+            subframe-header-subframe-type subframe-header-predictor-order subframe-header-wasted-bits
+
+            %make-frame-footer
+            frame-footer-crc
+
+            %make-frame
+            frame-header frame-subframes frame-footer
+
+            %make-subframe-constant
+            subframe-constant-value
+            %make-subframe-verbatim
+            subframe-verbatim-data
 
             make-metadata-block-header
             metadata-block-header-last?
@@ -25,8 +41,7 @@
             metadata-block-header-length
 
             make-metadata-padding
-
-            make-metadata-stream-info metadata-stream-info?
+make-metadata-stream-info metadata-stream-info?
             stream-info-min-block-size stream-info-max-block-size
             stream-info-min-frame-size stream-info-max-frame-size
             stream-info-sample-rate stream-info-channels
@@ -53,7 +68,6 @@
 
 (define FLAC-MAGIC #x664c6143) ; fLaC
 
-
 (define (enum-lookup enum int)
   (list-ref (enum-set->list enum) int))
 
@@ -63,7 +77,7 @@
 (define flac-frame-number-type
   (make-enumeration '(frame sample)))
 
-(define channel-assignment-type
+(define flac-channel-assignment-type
   (make-enumeration '(independent left right mid)))
 
 (define flac-subframe-type
@@ -79,6 +93,29 @@
   (raw-bits entropy-coding-method-partitioned-rice-contents-raw-bits)
   (capacity-by-order entropy-coding-method-partitioned-rice-contents-capacity-by-order))
 
+(define-record-type <subframe-header>
+  (%make-subframe-header subframe-type predictor-order wasted-bits)
+  subframe-header?
+  (subframe-type subframe-header-subframe-type)
+  (predictor-order subframe-header-predictor-order)
+  (wasted-bits subframe-header-wasted-bits))
+
+(define-record-type <subframe>
+  (%make-subframe header data)
+  subframe?
+  (header subframe-header)
+  (data subframe-data))
+
+(define-record-type <subframe-verbatim>
+  (%make-subframe-verbatim value)
+  subframe-verbatim?
+  (value subframe-verbatim-value))
+
+(define-record-type <subframe-constant>
+  (%make-subframe-constant value)
+  subframe-constant?
+  (value subframe-constant-value))
+
 (define-record-type <frame-header>
   (make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
   frame-header?
@@ -89,6 +126,18 @@
   (bits-per-sample frame-header-bits-per-sample)
   (frame/sample-number frame-header-frame/sample-number)
   (crc frame-header-crc))
+
+(define-record-type <frame-footer>
+  (%make-frame-footer crc)
+  frame-footer?
+  (crc frame-footer-crc))
+
+(define-record-type <frame>
+  (%make-frame header subframes footer)
+  frame?
+  (header frame-header)
+  (subframes frame-subframes)
+  (footer frame-footer))
 
 ; metadata
 
