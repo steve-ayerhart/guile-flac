@@ -44,7 +44,7 @@
    (map (λ (_) (string-split (utf8->string (flac-read-bytes (read-native-u32))) #\=)) (iota (read-native-u32)))))
 
 (define (read-metadata-block-padding length)
-  (flac-read-uint length)
+  (flac-read-bytes length)
   (make-metadata-padding length))
 
 (define (read-metadata-block-picture)

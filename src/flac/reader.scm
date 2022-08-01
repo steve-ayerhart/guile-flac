@@ -11,6 +11,7 @@
             flac-read-sint
             flac-read-bytes
             flac-read-coded-number
+            flac-read-rice-sint
             with-flac-input-port
             new-flac-reader
             make-flac-reader
@@ -65,6 +66,17 @@
 (define (flac-read-sint bits)
   (let ([uint (flac-read-uint bits)])
     (- uint (bitwise-arithmetic-shift (bitwise-arithmetic-shift-right uint (- bits 1)) bits))))
+
+(define (flac-read-rice-sint param)
+  (let rice-loop ([val 0])
+    (if (= 0 (flac-read-uint 1))
+        (rice-loop (+ 1 val))
+        (let ([val (bitwise-ior
+                    (bitwise-arithmetic-shift val param)
+                    (flac-read-uint param))])
+          (bitwise-xor
+           (bitwise-arithmetic-shift-left val 1)
+           (* -1 (bitwise-and val 1)))))))
 
 (define (flac-read/assert-magic)
   (unless (= FLAC-MAGIC (flac-read-uint 32))

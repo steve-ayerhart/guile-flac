@@ -32,8 +32,21 @@
 
             %make-subframe-constant
             subframe-constant-value
+
             %make-subframe-verbatim
             subframe-verbatim-data
+
+            %make-partitioned-rice
+            partitioned-rice-order partitioned-rice-contents
+
+            %make-entropy-coding-method
+            entropy-coding-method-type entropy-coding-method-data
+
+            %make-subframe-fixed
+            subframe-fixed-entropy-coding-method
+            subframe-fixed-predictor-order
+            subframe-fixed-warmup
+            subframe-fixed-residual
 
             make-metadata-block-header
             metadata-block-header-last?
@@ -115,6 +128,26 @@ make-metadata-stream-info metadata-stream-info?
   (%make-subframe-constant value)
   subframe-constant?
   (value subframe-constant-value))
+
+(define-record-type <rice-partition>
+  (%make-rice-partition order contents)
+  rice-partition?
+  (order rice-partition-order)
+  (contents rice-partition-contents))
+
+(define-record-type <entropy-coding-method>
+  (%make-entropy-coding-method type data)
+  entropy-coding-method?
+  (type entropy-coding-method-type)
+  (data entropy-coding-method-data))
+
+(define-record-type <subframe-fixed>
+  (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
+  subframe-fixed?
+  (entropy-coding-method subframe-fixed-entropy-coding-method)
+  (predictor-order subframe-fix-predictor-order)
+  (warmup subframe-fixed-warmup)
+  (residual subframe-fixed-residual))
 
 (define-record-type <frame-header>
   (make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
@@ -292,7 +325,7 @@ make-metadata-stream-info metadata-stream-info?
  <flac-metadata>
  (λ (record port)
    (format port "#<<flac-metadata>")
-   (let ((getters '(flac-metadata-stream-info flac-metadata-vorbis-comment flac-metadata-application flac-metadata-cuesheet flac-metadata-pictures flac-metadata-seek-table)))
+   (let ((getters '(flac-metadata-stream-info flac-metadata-vorbis-comment flac-metadata-application flac-metadata-cuesheet flac-metadata-pictures flac-metadata-seek-table flac-metadata-padding)))
      (for-each (λ (getter)
                  (when ((primitive-eval getter) record)
                    (regexp-substitute/global port "flac-metadata-" (symbol->string getter) 'pre " " 'post)))

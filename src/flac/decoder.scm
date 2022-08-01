@@ -95,7 +95,10 @@
   (%make-subframe-verbatim
    (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
 
-(define (read-subframe-fixed) #f)
+(define (read-subframe-fixed predictor-order blocksize sample-depth)
+  (format #t "bitdepth: ~a\n" sample-depth)
+  (let ((warmup ((list-ec (: o predictor-order) (flac-read-sint sample-depth)))))
+    raw))
 
 (define (read-subframe-lpc) #f)
 
@@ -108,11 +111,12 @@
 ;;; 1xxxxx lpc xxxxx = order - 1
 (define (read-subframe-type)
   (let ([raw (flac-read-uint 6)])
+    (format #t "raw: ~a\n" raw)
     (cond
      [(= raw #b000000) (values #f 'constant)]
      [(= raw #b000001) (values #f 'verbatim)]
-     [(between? raw #b0010000 #b001100) (values (bit-extract raw 0 4) 'fixed)]
-     [(between? raw #b1000000 #b111111) (values (bit-extract raw 0 6) 'lpc)]
+     [(between? raw #b001000 #b001100) (values (bit-extract raw 0 3) 'fixed)]
+     [(between? raw #b100000 #b111111) (values (bit-extract raw 0 6) 'lpc)]
      (else (values #f #f)))))
 
 (define (read-subframe-header)
@@ -124,18 +128,20 @@
 (define (read-subframe frame-header channel)
   (let* ([subframe-header (read-subframe-header)]
          [wasted-bits (subframe-header-wasted-bits subframe-header)]
+         [predictor-order (subframe-header-predictor-order subframe-header)]
          [sample-depth (calculate-sample-depth
                         (frame-header-bits-per-sample frame-header)
                         wasted-bits
                         (frame-header-channel-assignment frame-header)
                         channel)]
          [blocksize (frame-header-blocksize frame-header)])
+    (format #t "sf: ~a\n" subframe-header)
     (%make-subframe
      subframe-header
      (match (subframe-header-subframe-type subframe-header)
        ('constant (read-subframe-constant blocksize sample-depth wasted-bits))
        ('verbatim (read-subframe-verbatim blocksize sample-depth wasted-bits))
-       ('fixed (read-subframe-fixed))
+       ('fixed (read-subframe-fixed predictor-order blocksize sample-depth))
        ('lpx (read-subframe-lpc))))))
 
 (define (read-subframes stream-info frame-header)
