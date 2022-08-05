@@ -3,6 +3,7 @@
   #:use-module (flac format)
 
   #:use-module (srfi srfi-42)
+  #:use-module (srfi srfi-11)
 
   #:use-module (rnrs arithmetic bitwise)
 
@@ -95,10 +96,53 @@
   (%make-subframe-verbatim
    (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
 
+(define (read-entropy-coding-method-info)
+  (values
+   (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2])
+   (flac-read-uint 4)))
+
+(define (read-residual-partiioned-rice blocksize predictor-order)
+  (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
+    (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
+          (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
+          (partitions (bitwise-arithmetic-shift 1 partition-order))
+          (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
+      (let residual-loop ((sample 0)
+                          (partition 0)
+                          (parameters '())
+                          (raw-bits '())
+                          (residual '()))
+        (if (= partition partitions)
+            (values (%make-entropy-coding-method
+                     coding-method
+                     (%make-rice-partition
+                      partition-order
+                      (%make-entropy-coding-method-partitioned-rice-contents parameters raw-bits #f)))
+                    residual)
+            (let ((rice-parameter (flac-read-uint param-bits)))
+              (if (< rice-parameter escape-param)
+                  (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
+                    (format #t "samples ~a\n" count)
+                    (residual-loop (+ sample count)
+                                   (+ 1 partition)
+                                   (cons rice-parameter parameters)
+                                   (cons 0 raw-bits)
+                                   (list-ec (: c count) (flac-read-rice-sint rice-parameter))))
+                  (let ((num-bits ((flac-read-sint 5))))
+                    (residual-loop sample
+                                   (+ 1 partition)
+                                   (cons rice-parameter parameters)
+                                   (cons num-bits raw-bits)
+                                   (let ((order (if (= 0 partition) predictor-order 0)))
+                                     (if (= 0 raw-bits)
+                                         (list-ec (: o order) 0)
+                                         (list-ec (: o order) (flac-read-sint num-bits)))))))))))))
+
+
 (define (read-subframe-fixed predictor-order blocksize sample-depth)
-  (format #t "bitdepth: ~a\n" sample-depth)
-  (let ((warmup ((list-ec (: o predictor-order) (flac-read-sint sample-depth)))))
-    raw))
+  (let ((warmup (list-ec (: o predictor-order) (flac-read-sint sample-depth))))
+    (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize predictor-order)))
+      (%make-subframe-fixed entropy-coding-method predictor-order warmup residual))))
 
 (define (read-subframe-lpc) #f)
 
@@ -111,7 +155,6 @@
 ;;; 1xxxxx lpc xxxxx = order - 1
 (define (read-subframe-type)
   (let ([raw (flac-read-uint 6)])
-    (format #t "raw: ~a\n" raw)
     (cond
      [(= raw #b000000) (values #f 'constant)]
      [(= raw #b000001) (values #f 'verbatim)]
@@ -145,12 +188,14 @@
        ('lpx (read-subframe-lpc))))))
 
 (define (read-subframes stream-info frame-header)
-  (let ([channels (stream-info-channels stream-info)])
-    (map
-     (λ (header channel)
-       (read-subframe header channel))
-     (make-list channels frame-header)
-     (iota channels))))
+  (let* ([channels (stream-info-channels stream-info)]
+         [subframes (map
+                    (λ (header channel)
+                      (read-subframe header channel))
+                    (make-list channels frame-header)
+                    (iota channels))])
+    (align-to-byte)
+    subframes))
 
 (define-public (read-frame-header stream-info)
   (read/assert-frame-sync-code)
@@ -173,7 +218,9 @@
      frame/sample-number
      crc)))
 
-(define (read-frame-footer) #f)
+;; TODO: actually verify the checksum
+(define (read-frame-footer)
+  (flac-read-uint 16))
 
 (define-public (read-flac-frame stream-info)
   (let* ([header (read-frame-header stream-info)]

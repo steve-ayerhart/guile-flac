@@ -36,11 +36,17 @@
             %make-subframe-verbatim
             subframe-verbatim-data
 
-            %make-partitioned-rice
+            %make-rice-partition
             partitioned-rice-order partitioned-rice-contents
 
             %make-entropy-coding-method
             entropy-coding-method-type entropy-coding-method-data
+
+            %make-entropy-coding-method-partitioned-rice-contents
+            entropy-coding-method-partitioned-rice-contents-parameters
+            entropy-coding-method-partitioned-rice-contents-raw-bits
+            entropy-coding-method-partitioned-rice-contents?
+            entropy-codi
 
             %make-subframe-fixed
             subframe-fixed-entropy-coding-method
@@ -99,13 +105,6 @@ make-metadata-stream-info metadata-stream-info?
 (define flac-entropy-coding-method-type
   (make-enumeration '(rice rice2)))
 
-(define-record-type <entropy-coding-method-partitioned-rice-contents>
-  (make-entropy-coding-method-partitioned-rice-contents parameters raw-bits capacity-by-order)
-  entropy-coding-method-partitioned-rice-contents?
-  (parameters entropy-coding-method-partitioned-rice-contents-parameters)
-  (raw-bits entropy-coding-method-partitioned-rice-contents-raw-bits)
-  (capacity-by-order entropy-coding-method-partitioned-rice-contents-capacity-by-order))
-
 (define-record-type <subframe-header>
   (%make-subframe-header subframe-type predictor-order wasted-bits)
   subframe-header?
@@ -128,6 +127,13 @@ make-metadata-stream-info metadata-stream-info?
   (%make-subframe-constant value)
   subframe-constant?
   (value subframe-constant-value))
+
+(define-record-type <entropy-coding-method-partitioned-rice-contents>
+  (%make-entropy-coding-method-partitioned-rice-contents parameters raw-bits capacity-by-order)
+  entropy-coding-method-partitioned-rice-contents?
+  (parameters entropy-coding-method-partitioned-rice-contents-parameters)
+  (raw-bits entropy-coding-method-partitioned-rice-contents-raw-bits)
+  (capacity-by-order entropy-coding-method-partitioned-rice-contents-capacity-by-order))
 
 (define-record-type <rice-partition>
   (%make-rice-partition order contents)

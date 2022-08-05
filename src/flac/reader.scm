@@ -13,6 +13,7 @@
             flac-read-coded-number
             flac-read-rice-sint
             with-flac-input-port
+            align-to-byte
             new-flac-reader
             make-flac-reader
             flac-read/assert-magic
@@ -57,6 +58,10 @@
                                   (- (bitwise-arithmetic-shift 1 (flac-reader-bit-buffer-length reader)) 1)))
     uint))
 
+(define (align-to-byte)
+  (let ((bit-buffer-length (flac-reader-bit-buffer-length (current-flac-reader))))
+    (set-flac-reader-bit-buffer-length! (current-flac-reader) (- bit-buffer-length (modulo bit-buffer-length 8)))))
+
 (define (flac-read-bytes n)
   (u8-list->bytevector (map (λ (_) (flac-read-uint 8)) (iota n))))
 
@@ -75,7 +80,7 @@
                     (bitwise-arithmetic-shift val param)
                     (flac-read-uint param))])
           (bitwise-xor
-           (bitwise-arithmetic-shift-left val 1)
+           (bitwise-arithmetic-shift-right val 1)
            (* -1 (bitwise-and val 1)))))))
 
 (define (flac-read/assert-magic)
