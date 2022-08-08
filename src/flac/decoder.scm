@@ -122,19 +122,18 @@
             (let ((rice-parameter (flac-read-uint param-bits)))
               (if (< rice-parameter escape-param)
                   (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
-                    (format #t "samples ~a\n" count)
                     (residual-loop (+ sample count)
                                    (+ 1 partition)
                                    (cons rice-parameter parameters)
                                    (cons 0 raw-bits)
                                    (list-ec (: c count) (flac-read-rice-sint rice-parameter))))
-                  (let ((num-bits ((flac-read-sint 5))))
+                  (let ((num-bits (flac-read-sint 5)))
                     (residual-loop sample
                                    (+ 1 partition)
                                    (cons rice-parameter parameters)
                                    (cons num-bits raw-bits)
-                                   (let ((order (if (= 0 partition) predictor-order 0)))
-                                     (if (= 0 raw-bits)
+                                   (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
+                                     (if (= 0 num-bits)
                                          (list-ec (: o order) 0)
                                          (list-ec (: o order) (flac-read-sint num-bits)))))))))))))
 
@@ -144,7 +143,13 @@
     (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize predictor-order)))
       (%make-subframe-fixed entropy-coding-method predictor-order warmup residual))))
 
-(define (read-subframe-lpc) #f)
+(define (read-subframe-lpc lpc-order blocksize sample-depth)
+  (let* ((warmup (list-ec (: o lpc-order) (flac-read-sint sample-depth)))
+         (precision (+ 1 (flac-read-uint 4)))
+         (shift (flac-read-sint 5))
+         (coefs (list-ec (: o lpc-order) (flac-read-sint precision))))
+    (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize lpc-order)))
+      (%make-subframe-lpc entropy-coding-method lpc-order precision shift coefs warmup residual))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
@@ -159,7 +164,7 @@
      [(= raw #b000000) (values #f 'constant)]
      [(= raw #b000001) (values #f 'verbatim)]
      [(between? raw #b001000 #b001100) (values (bit-extract raw 0 3) 'fixed)]
-     [(between? raw #b100000 #b111111) (values (bit-extract raw 0 6) 'lpc)]
+     [(between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc)]
      (else (values #f #f)))))
 
 (define (read-subframe-header)
@@ -178,14 +183,13 @@
                         (frame-header-channel-assignment frame-header)
                         channel)]
          [blocksize (frame-header-blocksize frame-header)])
-    (format #t "sf: ~a\n" subframe-header)
     (%make-subframe
      subframe-header
      (match (subframe-header-subframe-type subframe-header)
        ('constant (read-subframe-constant blocksize sample-depth wasted-bits))
        ('verbatim (read-subframe-verbatim blocksize sample-depth wasted-bits))
        ('fixed (read-subframe-fixed predictor-order blocksize sample-depth))
-       ('lpx (read-subframe-lpc))))))
+       ('lpc (read-subframe-lpc predictor-order blocksize sample-depth))))))
 
 (define (read-subframes stream-info frame-header)
   (let* ([channels (stream-info-channels stream-info)]

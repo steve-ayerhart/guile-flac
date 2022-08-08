@@ -9,6 +9,13 @@
 
   #:use-module (srfi srfi-64))
 
+(define example-1
+  #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00
+            #x00 #x00 #x0f #x00 #x00 #x0f #x0a #xc4 #x42 #xf0 #x00 #x00
+            #x00 #x01 #x3e #x84 #xb4 #x18 #x07 #xdc #x69 #x03 #x07 #x58
+            #x6a #x3d #xad #x1a #x2e #x0f #xff #xf8 #x69 #x18 #x00 #x00
+            #xbf #x03 #x58 #xfd #x03 #x12 #x8b #xaa #x9a))
+
 (define example-2
   #vu8(#x66 #x4c #x61 #x43 #x00 #x00 #x00 #x22 #x00 #x10 #x00 #x10
             #x00 #x00 #x17 #x00 #x00 #x44 #x0a #xc4 #x42 #xf0 #x00 #x00
@@ -30,17 +37,17 @@
             #xff #xf8 #x69 #x18 #x01 #x02 #xa4 #x02 #xc3 #x82 #xc4 #x0b
             #xc1 #x4a #x03 #xee #x48 #xdd #x03 #xb6 #x7c #x13 #x30))
 
-(define example-1
-  #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00
-            #x00 #x00 #x0f #x00 #x00 #x0f #x0a #xc4 #x42 #xf0 #x00 #x00
-            #x00 #x01 #x3e #x84 #xb4 #x18 #x07 #xdc #x69 #x03 #x07 #x58
-            #x6a #x3d #xad #x1a #x2e #x0f #xff #xf8 #x69 #x18 #x00 #x00
-            #xbf #x03 #x58 #xfd #x03 #x12 #x8b #xaa #x9a))
+(define example-3
+  #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00 #x00
+            #x00 #x1f #x00 #x00 #x1f #x07 #xd0 #x00 #x70 #x00 #x00 #x00
+            #x18 #xf8 #xf9 #xe3 #x96 #xf5 #xcb #xcf #xc6 #xdc #x80 #x7f
+            #x99 #x77 #x90 #x6b #x32 #xff #xf8 #x68 #x02 #x00 #x17 #xe9
+            #x44 #x00 #x4f #x6f #x31 #x3d #x10 #x47 #xd2 #x27 #xcb #x6d
+            #x09 #x08 #x31 #x45 #x2b #xdc #x28 #x22 #x22 #x80 #x57 #xa3))
 
 ; (test-begin "RFC Examples")
 ;
 ;
-
 
 (with-tests
  "RFC Examples"

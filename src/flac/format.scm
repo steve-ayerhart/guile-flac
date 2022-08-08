@@ -36,6 +36,8 @@
             %make-subframe-verbatim
             subframe-verbatim-data
 
+            %make-subframe-lpc
+
             %make-rice-partition
             partitioned-rice-order partitioned-rice-contents
 
@@ -118,10 +120,29 @@ make-metadata-stream-info metadata-stream-info?
   (header subframe-header)
   (data subframe-data))
 
+(define-record-type <subframe-lpc>
+  (%make-subframe-lpc entropy-coding-method order qlp-coefficient-precision quantization-level qlp-coefficients warmup residual)
+  subframe-lpc?
+  (entropy-coding-method subframe-lpc-entropy-coding-method)
+  (order subframe-lpc-order)
+  (qlp-coefficient-precision subframe-lpc-qlp-coefficient-precision)
+  (quantization-level subframe-lpc-quantization-level)
+  (qlp-coefficients subframe-lpc-qlp-coefficients)
+  (warmup subframe-lpc-warmup)
+  (residual subframe-lpc-residual))
+
 (define-record-type <subframe-verbatim>
   (%make-subframe-verbatim value)
   subframe-verbatim?
   (value subframe-verbatim-value))
+
+(define-record-type <subframe-fixed>
+  (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
+  subframe-fixed?
+  (entropy-coding-method subframe-fixed-entropy-coding-method)
+  (predictor-order subframe-fix-predictor-order)
+  (warmup subframe-fixed-warmup)
+  (residual subframe-fixed-residual))
 
 (define-record-type <subframe-constant>
   (%make-subframe-constant value)
@@ -147,13 +168,6 @@ make-metadata-stream-info metadata-stream-info?
   (type entropy-coding-method-type)
   (data entropy-coding-method-data))
 
-(define-record-type <subframe-fixed>
-  (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
-  subframe-fixed?
-  (entropy-coding-method subframe-fixed-entropy-coding-method)
-  (predictor-order subframe-fix-predictor-order)
-  (warmup subframe-fixed-warmup)
-  (residual subframe-fixed-residual))
 
 (define-record-type <frame-header>
   (make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
