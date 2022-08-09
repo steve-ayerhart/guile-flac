@@ -21,10 +21,12 @@
 
 (define current-flac-reader (make-parameter #f))
 
+;;; TODO: redo api? callback based?
+
 (define-record-type <flac-reader>
-  (make-flac-reader port bit-buffer bit-buffer-length)
+  (make-flac-reader input-port bit-buffer bit-buffer-length)
   flac-reader?
-  (port flac-reader-port)
+  (input-port flac-reader-port)
   (bit-buffer flac-reader-bit-buffer set-flac-reader-bit-buffer!)
   (bit-buffer-length flac-reader-bit-buffer-length set-flac-reader-bit-buffer-length!))
 

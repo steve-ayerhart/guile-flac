@@ -34,7 +34,7 @@
             subframe-constant-value
 
             %make-subframe-verbatim
-            subframe-verbatim-data
+            subframe-verbatim-value
 
             %make-subframe-lpc
 

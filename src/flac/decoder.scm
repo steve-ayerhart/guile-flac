@@ -2,6 +2,7 @@
   #:use-module (flac reader)
   #:use-module (flac format)
 
+  #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-42)
   #:use-module (srfi srfi-11)
 
@@ -90,16 +91,16 @@
        (_ 0))))
 
 (define (read-subframe-constant blocksize sample-depth wasted-bits)
-  (%make-subframe-constant (make-list blocksize (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
+  (let ((subframe (%make-subframe-constant (make-list blocksize (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))))
+    (list subframe (subframe-constant-value subframe))))
 
 (define (read-subframe-verbatim blocksize sample-depth wasted-bits)
-  (%make-subframe-verbatim
-   (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits))))
+  (let ((subframe (%make-subframe-verbatim
+                   (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))))
+    (list subframe (subframe-verbatim-value subframe))))
 
 (define (read-entropy-coding-method-info)
-  (values
-   (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2])
-   (flac-read-uint 4)))
+  (values (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2]) (flac-read-uint 4)))
 
 (define (read-residual-partiioned-rice blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
@@ -126,22 +127,25 @@
                                    (+ 1 partition)
                                    (cons rice-parameter parameters)
                                    (cons 0 raw-bits)
-                                   (list-ec (: c count) (flac-read-rice-sint rice-parameter))))
+                                   (append residual (list-ec (: c count) (flac-read-rice-sint rice-parameter)))))
                   (let ((num-bits (flac-read-sint 5)))
                     (residual-loop sample
                                    (+ 1 partition)
                                    (cons rice-parameter parameters)
                                    (cons num-bits raw-bits)
                                    (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
-                                     (if (= 0 num-bits)
-                                         (list-ec (: o order) 0)
-                                         (list-ec (: o order) (flac-read-sint num-bits)))))))))))))
+                                     (append residual
+                                             (if (= 0 num-bits)
+                                                 (make-list order 0)
+                                                 (list-ec (: o order) (flac-read-sint num-bits))))))))))))))
 
 
 (define (read-subframe-fixed predictor-order blocksize sample-depth)
   (let ((warmup (list-ec (: o predictor-order) (flac-read-sint sample-depth))))
     (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize predictor-order)))
-      (%make-subframe-fixed entropy-coding-method predictor-order warmup residual))))
+      (list
+       (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
+       (restore-linear-prediction warmup residual (list-ref '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1)) predictor-order) predictor-order 0)))))
 
 (define (read-subframe-lpc lpc-order blocksize sample-depth)
   (let* ((warmup (list-ec (: o lpc-order) (flac-read-sint sample-depth)))
@@ -149,7 +153,37 @@
          (shift (flac-read-sint 5))
          (coefs (list-ec (: o lpc-order) (flac-read-sint precision))))
     (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize lpc-order)))
-      (%make-subframe-lpc entropy-coding-method lpc-order precision shift coefs warmup residual))))
+      (list
+       (%make-subframe-lpc entropy-coding-method lpc-order precision shift coefs warmup residual)
+       (restore-linear-prediction warmup residual coefs lpc-order shift)))))
+;       (restore-fixed-signal warmup residual lpc-order shift)))))
+
+  ;(let ((fixed-prediction-coefficients (list-ref '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1)) order)))
+(define (restore-linear-prediction warmup residuals coefficients order shift)
+  (fold (λ (i r samples)
+          (append
+           samples
+           (list (+ r (bitwise-arithmetic-shift-left
+                       (sum-ec (: c coefficients) (: j (take-right samples order)) (* j c))
+                       shift)))))
+        warmup
+        (iota (length residuals))
+        residuals))
+;  (list-ec (:range i (length coefficients) (length data))
+;           (+ (list-ref data i)
+;              (bitwise-arithmetic-shift-right
+;               (sum-ec (: j (iota (length coefficients))) (: c coefficients)
+;                       (begin
+;                         (format #t "data: ~a\n" (list-ref data i))
+;                         (format #t "ref: ~a\n" (list-ref data (- (- i 1) j)))
+;                       (* (list-ref data (- (- i 1) j)) c)))
+;               shift))))
+;  (let ((sum (fold (λ (c sum) (+ )))))
+;  (let ((test (sum-ec (:range (length coefficients) (length data))
+;
+;                      )))
+;  (fold (λ (i restored-data)
+;          (cons () ))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
