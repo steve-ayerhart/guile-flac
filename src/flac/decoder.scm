@@ -141,49 +141,38 @@
 
 
 (define (read-subframe-fixed predictor-order blocksize sample-depth)
-  (let ((warmup (list-ec (: o predictor-order) (flac-read-sint sample-depth))))
+  (let ((warmup (list-ec (: o predictor-order) (flac-read-sint sample-depth)))
+        (fixed-coefficients '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1))))
     (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize predictor-order)))
       (list
        (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
-       (restore-linear-prediction warmup residual (list-ref '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1)) predictor-order) predictor-order 0)))))
+       (restore-linear-prediction warmup residual (list-ref fixed-coefficients predictor-order) predictor-order 0)))))
 
 (define (read-subframe-lpc lpc-order blocksize sample-depth)
   (let* ((warmup (list-ec (: o lpc-order) (flac-read-sint sample-depth)))
          (precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
-         (coefs (list-ec (: o lpc-order) (flac-read-sint precision))))
+         (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision)))))
     (let-values (((entropy-coding-method residual) (read-residual-partiioned-rice blocksize lpc-order)))
       (list
        (%make-subframe-lpc entropy-coding-method lpc-order precision shift coefs warmup residual)
        (restore-linear-prediction warmup residual coefs lpc-order shift)))))
-;       (restore-fixed-signal warmup residual lpc-order shift)))))
 
-  ;(let ((fixed-prediction-coefficients (list-ref '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1)) order)))
 (define (restore-linear-prediction warmup residuals coefficients order shift)
-  (fold (λ (i r samples)
+  (fold (λ (residual samples)
           (append
            samples
-           (list (+ r (bitwise-arithmetic-shift-left
-                       (sum-ec (: c coefficients) (: j (take-right samples order)) (* j c))
-                       shift)))))
+           (list
+            (+ residual
+               (bitwise-arithmetic-shift-right
+                (fold (λ (residual coefficient predictor)
+                        (+ predictor (* residual coefficient)))
+                      0
+                      (take-right samples order)
+                      coefficients)
+                shift)))))
         warmup
-        (iota (length residuals))
         residuals))
-;  (list-ec (:range i (length coefficients) (length data))
-;           (+ (list-ref data i)
-;              (bitwise-arithmetic-shift-right
-;               (sum-ec (: j (iota (length coefficients))) (: c coefficients)
-;                       (begin
-;                         (format #t "data: ~a\n" (list-ref data i))
-;                         (format #t "ref: ~a\n" (list-ref data (- (- i 1) j)))
-;                       (* (list-ref data (- (- i 1) j)) c)))
-;               shift))))
-;  (let ((sum (fold (λ (c sum) (+ )))))
-;  (let ((test (sum-ec (:range (length coefficients) (length data))
-;
-;                      )))
-;  (fold (λ (i restored-data)
-;          (cons () ))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
