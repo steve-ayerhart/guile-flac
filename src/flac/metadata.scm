@@ -8,7 +8,7 @@
   #:use-module (rnrs bytevectors)
   #:use-module (srfi srfi-1)
 
-  #:export (flac-metadata flac-file-metadata))
+  #:export (read-flac-metadata flac-metadata flac-file-metadata))
 
 (define (read-metadata-block-header)
   (make-metadata-block-header

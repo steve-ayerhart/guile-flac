@@ -19,7 +19,8 @@
             frame-header-frame/sample-number frame-header-crc
 
             %make-subframe
-            subframe-header subframe-data
+            subframe?
+            subframe-header subframe-data subframe-samples
 
             %make-subframe-header
             subframe-header-subframe-type subframe-header-predictor-order subframe-header-wasted-bits
@@ -28,7 +29,7 @@
             frame-footer-crc
 
             %make-frame
-            frame-header frame-subframes frame-footer
+            frame-header frame-subframes frame-footer frame-samples
 
             %make-subframe-constant
             subframe-constant-value
@@ -48,7 +49,6 @@
             entropy-coding-method-partitioned-rice-contents-parameters
             entropy-coding-method-partitioned-rice-contents-raw-bits
             entropy-coding-method-partitioned-rice-contents?
-            entropy-codi
 
             %make-subframe-fixed
             subframe-fixed-entropy-coding-method
@@ -62,7 +62,7 @@
             metadata-block-header-length
 
             make-metadata-padding
-make-metadata-stream-info metadata-stream-info?
+            make-metadata-stream-info metadata-stream-info?
             stream-info-min-block-size stream-info-max-block-size
             stream-info-min-frame-size stream-info-max-frame-size
             stream-info-sample-rate stream-info-channels
@@ -119,6 +119,7 @@ make-metadata-stream-info metadata-stream-info?
   subframe?
   (header subframe-header)
   (data subframe-data))
+
 
 (define-record-type <subframe-lpc>
   (%make-subframe-lpc entropy-coding-method order qlp-coefficient-precision quantization-level qlp-coefficients warmup residual)
@@ -186,11 +187,12 @@ make-metadata-stream-info metadata-stream-info?
   (crc frame-footer-crc))
 
 (define-record-type <frame>
-  (%make-frame header subframes footer)
+  (%make-frame header subframes footer samples)
   frame?
   (header frame-header)
   (subframes frame-subframes)
-  (footer frame-footer))
+  (footer frame-footer)
+  (samples frame-samples))
 
 ; metadata
 
