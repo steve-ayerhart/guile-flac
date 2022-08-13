@@ -217,28 +217,59 @@
        (%make-subframe subframe-header subframe)
        samples))))
 
+;; TODO: clean up the channel decorrelation this is kind of ugly
 (define (read-subframes stream-info frame-header)
-  (let ((channels (stream-info-channels stream-info)))
-    (let subframe-loop ((channel 0)
-                        (subframes '())
-                        (samples '()))
-      (if (>= channel channels)
-          (begin
-            (align-to-byte)
-            (values subframes samples))
-          (let-values (((subframe subframe-samples)
-                        (read-subframe frame-header channel)))
-            (subframe-loop (+ 1 channel)
-                           (cons subframe subframes)
-                           (cons subframe-samples samples)))))))
+  (let ((channels (stream-info-channels stream-info))
+        (channel-assignment (frame-header-channel-assignment frame-header)))
+    (if (eq? 'independent channel-assignment)
+        ; do nothing loop over channels
+        (let channel-loop ((channel 0)
+                           (subframes '())
+                           (samples '()))
+          (if (>= channel channels)
+              (values subframes samples)
+              (let-values (((subframe subframe-samples) (read-subframe frame-header channel)))
+                (channel-loop (+ 1 channel)
+                              (append subframes (list subframe))
+                              (append samples (list subframe-samples))))))
+        (let-values (((channel-0-subframe channel-0-samples) (read-subframe frame-header 0))
+                     ((channel-1-subframe channel-1-samples) (read-subframe frame-header 1)))
+          (match channel-assignment
+            ('left (values
+                    (list channel-0-subframe channel-1-subframe)
+                    (list channel-0-samples (map - channel-0-samples channel-1-samples))))
+            ('right (values
+                     (list channel-0-subframe channel-1-subframe)
+                     (list (map + channel-0-samples channel-1-samples) channel-1-samples)))
+            ('mid (values
+                   (list channel-0-subframe channel-1-subframe)
+                   (fold
+                    (λ (channel-0 channel-1 samples)
+                      (let* ((channel-0-samples (first samples))
+                             (channel-1-samples (second samples))
+                             (side channel-1)
+                             (right (- channel-0 (bitwise-arithmetic-shift-right side 1))))
+                        (list
+                         (append channel-0-samples (list right))
+                         (append channel-1-samples (list (+ right side))))))
+                      '(() ())
+                      channel-0-samples
+                      channel-1-samples))))))))
 
-;         (subframes (map
-;                    (λ (header channel)
-;                      (read-subframe header channel))
-;                    (make-list channels frame-header)
-;                    (iota channels))))
-;    (align-to-byte)
-;    subframes))
+;(define (read-subframes stream-info frame-header)
+;  (let ((channels (stream-info-channels stream-info)))
+;    (let subframe-loop ((channel 0)
+;                        (subframes '())
+;                        (samples '()))
+;      (if (>= channel channels)
+;          (begin
+;            (align-to-byte)
+;            (values subframes samples))
+;          (let-values (((subframe subframe-samples)
+;                        (read-subframe frame-header channel)))
+;            (subframe-loop (+ 1 channel)
+;                           (cons subframe subframes)
+;                           (cons subframe-samples samples)))))))
 
 (define-public (read-frame-header stream-info)
   (read/assert-frame-sync-code)
@@ -268,5 +299,6 @@
 (define (read-flac-frame stream-info)
   (let ((header (read-frame-header stream-info)))
     (let-values (((subframes samples) (read-subframes stream-info header)))
+      (align-to-byte)
       (let ((footer (read-frame-footer)))
         (%make-frame header subframes footer samples)))))

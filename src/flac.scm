@@ -29,15 +29,16 @@
   (let* ((header (frame-header frame))
          (total-bytes (floor-quotient (frame-header-bits-per-sample header) 8))
          (addend (if (= 8 (frame-header-bits-per-sample header)) 128 0))
-         (data-bv (make-bytevector 4)))
+         (data-bv (make-bytevector total-bytes)))
     (for-each
      (lambda (block)
        (for-each
         (lambda (channel)
-          (bytevector-s32-set! data-bv
+          (bytevector-sint-set! data-bv
                                0
                                (+ addend (list-ref (list-ref (frame-samples frame) channel) block))
-                               (endianness little))
+                               (endianness little)
+                               total-bytes)
           (put-bytevector (current-output-port) data-bv))
         (iota channels)))
      (iota (frame-header-blocksize header)))))
@@ -74,6 +75,7 @@
                                                     (stream-info-channels stream-info)
                                                     (floor-quotient (stream-info-bits-per-sample stream-info) 8)))))))
             (format #t "SAMPLES: ~a\n" (stream-info-samples stream-info))
+            (format #t "bps: ~a\n" (stream-info-bits-per-sample stream-info))
             (with-output-to-file outfile
               (lambda ()
                 (put-bytevector (current-output-port) (bytestructure-unwrap wav-header))
