@@ -114,7 +114,7 @@
                           (parameters '())
                           (raw-bits '())
                           (residual '()))
-        (if (= partition partitions)
+        (if (>= partition partitions)
             (values (%make-entropy-coding-method
                      coding-method
                      (%make-rice-partition

@@ -44,7 +44,8 @@
      (iota (frame-header-blocksize header)))))
 
 (define (decode-flac-file infile outfile)
-  (with-input-from-file infile
+  (let ((old-output (current-output-port)))
+    (with-input-from-file infile
     (λ ()
       (with-flac-input-port (current-input-port)
         (λ ()
@@ -87,4 +88,20 @@
                         (write-frame frame (stream-info-channels stream-info))
                         (frame-loop (+ 1 frame-number)
                                     (read-flac-frame stream-info))))))
-              #:binary #t)))))))
+              #:binary #t))))))))
+;
+;            (format #t "SAMPLES: ~a\n" (stream-info-samples stream-info))
+;            (format #t "bps: ~a\n" (stream-info-bits-per-sample stream-info))
+;            (with-output-to-file outfile
+;              (lambda ()
+;                (put-bytevector (current-output-port) (bytestructure-unwrap wav-header))
+;                (let frame-loop ((frame-number 0)
+;                                 (frame (read-flac-frame stream-info)))
+;                  (if (= (stream-info-samples stream-info) frame-number)
+;                      #t
+;                      (begin
+;                        (format old-output "frame ~a\n" frame)
+;                        (write-frame frame (stream-info-channels stream-info))
+;                        (frame-loop (+ 1 frame-number)
+;                                    (read-flac-frame stream-info))))))))))))
+;              #:binary #t))))))))

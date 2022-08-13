@@ -93,4 +93,6 @@
   (let coded-number-loop ((coded-sample-number (flac-read-uint 8)))
     (if (< coded-sample-number #b11000000)
         coded-sample-number
-        (coded-number-loop (bitwise-and (bitwise-arithmetic-shift coded-sample-number 1) #xff)))))
+        (begin
+          (flac-read-uint 8)
+          (coded-number-loop (bitwise-and (bitwise-arithmetic-shift coded-sample-number 1) #xff))))))

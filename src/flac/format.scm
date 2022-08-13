@@ -120,7 +120,6 @@
   (header subframe-header)
   (data subframe-data))
 
-
 (define-record-type <subframe-lpc>
   (%make-subframe-lpc entropy-coding-method order qlp-coefficient-precision quantization-level qlp-coefficients warmup residual)
   subframe-lpc?
@@ -168,7 +167,6 @@
   entropy-coding-method?
   (type entropy-coding-method-type)
   (data entropy-coding-method-data))
-
 
 (define-record-type <frame-header>
   (make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
@@ -331,6 +329,11 @@
  <picture>
  (λ (record port)
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
+
+(set-record-type-printer!
+ <frame>
+ (λ (record port)
+   (format port "#<<frame> header: ~a>" (frame-header record))))
 
 (define-record-type <flac-metadata>
   (make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
