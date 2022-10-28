@@ -2,16 +2,18 @@
   #:use-module (flac format)
   #:use-module (flac reader)
 
+  #:use-module (bytestructures guile)
   #:use-module (ice-9 match)
   #:use-module (ice-9 optargs)
+  #:use-module (ice-9 receive)
   #:use-module (rnrs enums)
   #:use-module (rnrs bytevectors)
   #:use-module (srfi srfi-1)
 
   #:export (read-flac-metadata flac-metadata flac-file-metadata))
 
-(define (read-metadata-block-header)
-  (make-metadata-block-header
+(define-public (read-metadata-block-header)
+  (values
    (= 1 (flac-read-uint 1))
    (list-ref (enum-set->list flac-metadata-type) (flac-read-uint 7))
    (flac-read-uint 24)))
@@ -79,29 +81,26 @@
 
 (define (read-flac-metadata)
   (flac-read/assert-magic)
-  (let metadata-loop ((metadata (make-flac-metadata #f #f #f #f #f #f #f))
-                      (header (read-metadata-block-header)))
-    (if (metadata-block-header-last? header)
-        (read-metadata-block metadata (metadata-block-header-length header) (metadata-block-header-type header))
-        (metadata-loop (read-metadata-block
-                        metadata
-                        (metadata-block-header-length header)
-                        (metadata-block-header-type header))
-                       (read-metadata-block-header)))))
+  (let metadata-loop ((metadata (make-flac-metadata #f #f #f #f #f #f #f)))
+    (receive (last-block? block-type block-length)
+        (read-metadata-block-header)
+      (if last-block?
+          (read-metadata-block metadata block-length block-type)
+          (metadata-loop (read-metadata-block metadata block-length block-type))))))
 
                                         ; FIXME: bail early if not in type
 (define (read-flac-metadata-type type)
-  (flac-read/assert-magic)
-  (let metadata-loop ((header (read-metadata-block-header)))
-    (if (or (metadata-block-header-last? header)
-            (equal? type (metadata-block-header-type header)))
-        (match type
-          ('stream-info (read-metadata-block-stream-info))
-          ('vorbis-comment (read-metadata-block-vorbis-comment))
-          (_ #f))
-        (begin
-          (flac-read-bytes (metadata-block-header-length header))
-          (metadata-loop (read-metadata-block-header))))))
+  (let metadata-loop ()
+    (receive (last-block? block-type block-length)
+        (read-metadata-block-header)
+      (if (or last-block? (equal? type block-type))
+          (match type
+            ('stream-info (read-metadata-block-stream-info))
+            ('vorbis-comment (read-metadata-block-vorbis-comment))
+            (_ #f))
+          (begin
+            (flac-read-bytes block-length)
+            (metadata-loop))))))
 
 (define* (flac-metadata port #:optional (type #f))
   (with-flac-input-port port
@@ -113,4 +112,5 @@
 (define* (flac-file-metadata filename #:optional (type #f))
   (with-flac-input-port (open-input-file filename #:binary #t)
    (λ ()
+     (flac-read/assert-magic)
      (flac-metadata (current-input-port) type))))

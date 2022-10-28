@@ -20,6 +20,7 @@
             current-flac-reader))
 
 (define current-flac-reader (make-parameter #f))
+(define default-bit-reader-capacity 65536)
 
 ;;; TODO: redo api? callback based?
 

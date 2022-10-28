@@ -69,6 +69,8 @@
             stream-info-bits-per-sample stream-info-samples stream-info-md5
 
             make-metadata-vorbis-comment
+            vorbis-comment-vendor
+            vorbis-comment-comments
 
             make-flac-metadata
             flac-metadata-stream-info set-flac-metadata-stream-info!
@@ -185,10 +187,9 @@
   (crc frame-footer-crc))
 
 (define-record-type <frame>
-  (%make-frame header subframes footer samples)
+  (%make-frame header footer samples)
   frame?
   (header frame-header)
-  (subframes frame-subframes)
   (footer frame-footer)
   (samples frame-samples))
 
@@ -224,10 +225,10 @@
   (samples stream-info-samples)
   (md5 stream-info-md5))
 
-(set-record-type-printer!
- <stream-info>
- (λ (record port)
-   (format port "#<stream-info>")))
+;(set-record-type-printer!
+; <stream-info>
+; (λ (record port)
+;   (format port "#<stream-info>")))
 
 (define-record-type <seek-table>
   (make-metadata-seek-table seek-points)
@@ -330,10 +331,10 @@
  (λ (record port)
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
 
-(set-record-type-printer!
- <frame>
- (λ (record port)
-   (format port "#<<frame> header: ~a>" (frame-header record))))
+; (set-record-type-printer!
+;  <frame>
+;  (λ (record port)
+;    (format port "#<<frame> header: ~a>" (frame-header record))))
 
 (define-record-type <flac-metadata>
   (make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
