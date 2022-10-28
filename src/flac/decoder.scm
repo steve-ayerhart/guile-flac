@@ -239,14 +239,13 @@
          (residual (read-residual-partitioned-rice blocksize lpc-order)))
     (restore-linear-prediction warmup residual coefs lpc-order shift)))
 
-
 ;; TODO: clean up the channel decorrelation this is kind of ugly
 (define (read-subframes stream-info frame-header)
   (let ((channels (stream-info-channels stream-info))
         (channel-assignment (frame-header-channel-assignment frame-header)))
     (map! (λ (channel) (read-subframe frame-header channel)) (iota channels))))
 
-e; TODO: actually verify the checksum
+; TODO: actually verify the checksum
 (define (read-frame-footer)
   (flac-read-uint 16))
 

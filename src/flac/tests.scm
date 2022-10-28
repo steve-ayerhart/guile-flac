@@ -56,13 +56,11 @@
    (with-flac-input-port
     (open-bytevector-input-port example-1)
     (λ ()
-      (let* ((expected-metadata (make-flac-metadata
-                                 (make-metadata-stream-info
+      (let* ((expected-streaminfo (%make-metadata-stream-info
                                   4096 4096 15 15 44100 2 16 1
-                                  #vu8(62 132 180 24 7 220 105 3 7 88 106 61 173 26 46 15))
-                                 #f #f #f #f #f #f))
+                                  #vu8(62 132 180 24 7 220 105 3 7 88 106 61 173 26 46 15)))
              (expected-frame (%make-frame
-                              (make-frame-header 'fixed 1 44100 'independent 16 0 191)
+                              (%make-frame-header 'fixed 1 44100 'independent 16 0 191)
                               43674
                               '((25588) (10416))))
 
@@ -73,29 +71,29 @@
           (test-equal
               "stream info"
             (flac-metadata-stream-info actual-metadata)
-            (flac-metadata-stream-info expected-metadata)))
+            expected-streaminfo))
         (test-group "Frame"
           (test-equal "first frame" expected-frame expected-frame))))))
  (test-group "Example 2"
    (with-flac-input-port
     (open-bytevector-input-port example-2)
     (λ ()
-      (let* ((expected-stream-info (make-metadata-stream-info
+      (let* ((expected-stream-info (%make-metadata-stream-info
                                   16 16 23 68 44100 2 16 19
                                   #vu8(213 176 86 73 117 233 139 141 139 147 4 34 117 123 129 3)))
-             (expected-vorbis-comment (make-metadata-vorbis-comment
+             (expected-vorbis-comment (%make-metadata-vorbis-comment
                                        "reference libFLAC 1.3.3 20190804"
                                        (list '("TITLE" "שלום"))))
-             (expected-padding (make-metadata-padding 6))
-             (expected-seek-table (make-metadata-seek-table
-                                   (list (make-metadata-seek-point 0 0 16))))
+             (expected-padding (%make-metadata-padding 6))
+             (expected-seek-table (%make-metadata-seek-table
+                                   (list (%make-metadata-seek-point 0 0 16))))
              (expected-first-frame (%make-frame
-                                    (make-frame-header 'fixed 16 44100 'right 16 0 153)
+                                    (%make-frame-header 'fixed 16 44100 'right 16 0 153)
                                     47120
                                     '((4302 7496 6199 7427 6484 7436 6740 7508 6984 7583 7182 -5990 -6306 -6032 -6299 -6165)
                                       (6070 10545 8743 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653))))
              (expected-second-frame (%make-frame
-                                     (make-frame-header 'fixed 3 44100 'independent 16 1 164)
+                                     (%make-frame-header 'fixed 3 44100 'independent 16 1 164)
                                      4912
                                     '((-15486 -15349 -16054)
                                       (-9072 -8958 -9410))))

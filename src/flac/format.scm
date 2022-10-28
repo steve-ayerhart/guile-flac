@@ -13,7 +13,7 @@
             flac-subframe-type
             flac-entropy-coding-method-type
 
-            make-frame-header
+            %make-frame-header
             frame-header-strategy frame-header-blocksize frame-header-sample-rate
             frame-header-channel-assignment frame-header-bits-per-sample
             frame-header-frame/sample-number frame-header-crc
@@ -31,48 +31,20 @@
             %make-frame
             frame-header frame-subframes frame-footer frame-samples
 
-            %make-subframe-constant
-            subframe-constant-value
+            %make-metadata-padding metadata-padding?
+            padding-length
 
-            %make-subframe-verbatim
-            subframe-verbatim-value
-
-            %make-subframe-lpc
-
-            %make-rice-partition
-            partitioned-rice-order partitioned-rice-contents
-
-            %make-entropy-coding-method
-            entropy-coding-method-type entropy-coding-method-data
-
-            %make-entropy-coding-method-partitioned-rice-contents
-            entropy-coding-method-partitioned-rice-contents-parameters
-            entropy-coding-method-partitioned-rice-contents-raw-bits
-            entropy-coding-method-partitioned-rice-contents?
-
-            %make-subframe-fixed
-            subframe-fixed-entropy-coding-method
-            subframe-fixed-predictor-order
-            subframe-fixed-warmup
-            subframe-fixed-residual
-
-            make-metadata-block-header
-            metadata-block-header-last?
-            metadata-block-header-type
-            metadata-block-header-length
-
-            make-metadata-padding
-            make-metadata-stream-info metadata-stream-info?
+            %make-metadata-stream-info metadata-stream-info?
             stream-info-min-block-size stream-info-max-block-size
             stream-info-min-frame-size stream-info-max-frame-size
             stream-info-sample-rate stream-info-channels
             stream-info-bits-per-sample stream-info-samples stream-info-md5
 
-            make-metadata-vorbis-comment
+            %make-metadata-vorbis-comment
             vorbis-comment-vendor
             vorbis-comment-comments
 
-            make-flac-metadata
+            %make-flac-metadata
             flac-metadata-stream-info set-flac-metadata-stream-info!
             flac-metadata-seek-table set-flac-metadata-seek-table!
             flac-metadata-vorbis-comment set-flac-metadata-vorbis-comment!
@@ -81,11 +53,11 @@
             flac-metadata-application set-flac-metadata-application!
             flac-metadata-cuesheet set-flac-metadata-cuesheet!
 
-
-            make-metadata-picture
+            %make-metadata-picture
             flac-picture-type
 
-            make-metadata-seek-point make-metadata-seek-table
+            %make-metadata-seek-table
+            %make-metadata-seek-point
 
             flac-metadata-type flac-metadata-type-index))
 
@@ -122,56 +94,8 @@
   (header subframe-header)
   (data subframe-data))
 
-(define-record-type <subframe-lpc>
-  (%make-subframe-lpc entropy-coding-method order qlp-coefficient-precision quantization-level qlp-coefficients warmup residual)
-  subframe-lpc?
-  (entropy-coding-method subframe-lpc-entropy-coding-method)
-  (order subframe-lpc-order)
-  (qlp-coefficient-precision subframe-lpc-qlp-coefficient-precision)
-  (quantization-level subframe-lpc-quantization-level)
-  (qlp-coefficients subframe-lpc-qlp-coefficients)
-  (warmup subframe-lpc-warmup)
-  (residual subframe-lpc-residual))
-
-(define-record-type <subframe-verbatim>
-  (%make-subframe-verbatim value)
-  subframe-verbatim?
-  (value subframe-verbatim-value))
-
-(define-record-type <subframe-fixed>
-  (%make-subframe-fixed entropy-coding-method predictor-order warmup residual)
-  subframe-fixed?
-  (entropy-coding-method subframe-fixed-entropy-coding-method)
-  (predictor-order subframe-fix-predictor-order)
-  (warmup subframe-fixed-warmup)
-  (residual subframe-fixed-residual))
-
-(define-record-type <subframe-constant>
-  (%make-subframe-constant value)
-  subframe-constant?
-  (value subframe-constant-value))
-
-(define-record-type <entropy-coding-method-partitioned-rice-contents>
-  (%make-entropy-coding-method-partitioned-rice-contents parameters raw-bits capacity-by-order)
-  entropy-coding-method-partitioned-rice-contents?
-  (parameters entropy-coding-method-partitioned-rice-contents-parameters)
-  (raw-bits entropy-coding-method-partitioned-rice-contents-raw-bits)
-  (capacity-by-order entropy-coding-method-partitioned-rice-contents-capacity-by-order))
-
-(define-record-type <rice-partition>
-  (%make-rice-partition order contents)
-  rice-partition?
-  (order rice-partition-order)
-  (contents rice-partition-contents))
-
-(define-record-type <entropy-coding-method>
-  (%make-entropy-coding-method type data)
-  entropy-coding-method?
-  (type entropy-coding-method-type)
-  (data entropy-coding-method-data))
-
 (define-record-type <frame-header>
-  (make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
+  (%make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
   frame-header?
   (blocking-strategy frame-header-blocking-strategy)
   (blocksize frame-header-blocksize)
@@ -194,7 +118,6 @@
   (samples frame-samples))
 
 ; metadata
-
 (define flac-metadata-type
   (make-enumeration '(stream-info
                       padding
@@ -205,15 +128,8 @@
                       picture
                       invalid)))
 
-(define-record-type <metadata-block-header>
-  (make-metadata-block-header last? type length)
-  metadata-block-header?
-  (last? metadata-block-header-last?)
-  (type metadata-block-header-type)
-  (length metadata-block-header-length))
-
 (define-record-type <stream-info>
-  (make-metadata-stream-info min-block-size max-block-size min-frame-size max-frame-size sample-rate channels bits-per-sample samples md5)
+  (%make-metadata-stream-info min-block-size max-block-size min-frame-size max-frame-size sample-rate channels bits-per-sample samples md5)
   metadata-stream-info?
   (min-block-size stream-info-min-block-size)
   (max-block-size stream-info-max-block-size)
@@ -231,19 +147,19 @@
 ;   (format port "#<stream-info>")))
 
 (define-record-type <seek-table>
-  (make-metadata-seek-table seek-points)
+  (%make-metadata-seek-table seek-points)
   metadata-seek-table?
   (seek-points seek-table-seek-points))
 
 (define-record-type <seek-point>
-  (make-metadata-seek-point sample-number offset total-samples)
+  (%make-metadata-seek-point sample-number offset total-samples)
   metadata-seek-point?
   (sample-number seek-point-sample-number)
   (offset seek-point-offset)
   (total-samples seek-point-total-samples))
 
 (define-record-type <vorbis-comment>
-  (make-metadata-vorbis-comment vendor comments)
+  (%make-metadata-vorbis-comment vendor comments)
   metadata-vorbis-comment?
   (vendor vorbis-comment-vendor)
   (comments vorbis-comment-comments))
@@ -254,12 +170,12 @@
    (format port "#<<vorbis-comment> vendor: ~a comments: ~a>" (vorbis-comment-vendor record) (length (vorbis-comment-comments record)))))
 
 (define-record-type <padding>
-  (make-metadata-padding length)
+  (%make-metadata-padding length)
   metadata-padding?
   (length padding-length))
 
 (define-record-type <application>
-  (make-metadata-application id data)
+  (%make-metadata-application id data)
   metadata-application?
   (id application-id)
   (data application-data))
@@ -267,7 +183,7 @@
 (define flac-cuesheet-track-type (make-enumeration '(audio non-audio)))
 
 (define-record-type <cuesheet-track>
-  (make-metadata-cuesheet-track offset number isrc type pre-emphasis indices)
+  (%make-metadata-cuesheet-track offset number isrc type pre-emphasis indices)
   metadata-cuesheet-track?
   (offset cuesheet-track-offset)
   (number cuesheet-track-number)
@@ -277,13 +193,13 @@
   (indices cuesheet-track-indices))
 
 (define-record-type <cuesheet-index>
-  (make-metadata-cuesheet-index offset number)
+  (%make-metadata-cuesheet-index offset number)
   metadata-cuesheet-index?
   (offset cuesheet-index-offset)
   (number cuesheet-index-number))
 
 (define-record-type <cuesheet>
-  (make-metadata-cuesheet catalog-number lead-in cd? tracks)
+  (%make-metadata-cuesheet catalog-number lead-in cd? tracks)
   metadata-cuesheet?
   (catalog-number cuesheet-catalog-number)
   (lead-in cuesheet-lead-in)
@@ -315,7 +231,7 @@
     publisher/studio-logotype)))
 
 (define-record-type <picture>
-  (make-metadata-picture type mime-type description width height depth colors data)
+  (%make-metadata-picture type mime-type description width height depth colors data)
   metadata-picture?
   (type picture-type)
   (mime-type picture-mime-type)
@@ -337,7 +253,7 @@
 ;    (format port "#<<frame> header: ~a>" (frame-header record))))
 
 (define-record-type <flac-metadata>
-  (make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
+  (%make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
   flac-metadata?
   (stream-info flac-metadata-stream-info set-flac-metadata-stream-info!)
   (padding flac-metadata-padding set-flac-metadata-padding!)

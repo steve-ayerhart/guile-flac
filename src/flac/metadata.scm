@@ -19,7 +19,7 @@
    (flac-read-uint 24)))
 
 (define (read-metadata-block-stream-info)
-  (make-metadata-stream-info
+  (%make-metadata-stream-info
    (flac-read-uint 16)
    (flac-read-uint 16)
    (flac-read-uint 24)
@@ -31,9 +31,9 @@
    (flac-read-bytes 16)))
 
 (define (read-metadata-block-seek-table length)
-  (make-metadata-seek-table
+  (%make-metadata-seek-table
    (map (λ (_)
-          (make-metadata-seek-point
+          (%make-metadata-seek-point
            (flac-read-uint 64)
            (flac-read-uint 64)
            (flac-read-uint 16)))
@@ -41,16 +41,16 @@
 
 (define (read-metadata-block-vorbis-comment)
   (define (read-native-u32) (bytevector-u32-native-ref (flac-read-bytes 4) 0))
-  (make-metadata-vorbis-comment
+  (%make-metadata-vorbis-comment
    (utf8->string (flac-read-bytes (read-native-u32)))
    (map (λ (_) (string-split (utf8->string (flac-read-bytes (read-native-u32))) #\=)) (iota (read-native-u32)))))
 
 (define (read-metadata-block-padding length)
   (flac-read-bytes length)
-  (make-metadata-padding length))
+  (%make-metadata-padding length))
 
 (define (read-metadata-block-picture)
-  (make-metadata-picture
+  (%make-metadata-picture
    (list-ref (enum-set->list flac-picture-type) (flac-read-uint 32))
    (utf8->string (flac-read-bytes (flac-read-uint 32)))
    (utf8->string (flac-read-bytes (flac-read-uint 32)))
@@ -81,7 +81,7 @@
 
 (define (read-flac-metadata)
   (flac-read/assert-magic)
-  (let metadata-loop ((metadata (make-flac-metadata #f #f #f #f #f #f #f)))
+  (let metadata-loop ((metadata (%make-flac-metadata #f #f #f #f #f #f #f)))
     (receive (last-block? block-type block-length)
         (read-metadata-block-header)
       (if last-block?
@@ -104,13 +104,13 @@
 
 (define* (flac-metadata port #:optional (type #f))
   (with-flac-input-port port
-   (λ ()
-     (if (symbol? type)
-         (read-flac-metadata-type type)
-         (read-flac-metadata)))))
+                        (λ ()
+                          (if (symbol? type)
+                              (read-flac-metadata-type type)
+                              (read-flac-metadata)))))
 
 (define* (flac-file-metadata filename #:optional (type #f))
   (with-flac-input-port (open-input-file filename #:binary #t)
-   (λ ()
-     (flac-read/assert-magic)
-     (flac-metadata (current-input-port) type))))
+                        (λ ()
+                          (flac-read/assert-magic)
+                          (flac-metadata (current-input-port) type))))
