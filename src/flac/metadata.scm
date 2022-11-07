@@ -88,7 +88,7 @@
           (read-metadata-block metadata block-length block-type)
           (metadata-loop (read-metadata-block metadata block-length block-type))))))
 
-                                        ; FIXME: bail early if not in type
+;;; FIXME: bail early if not in type
 (define (read-flac-metadata-type type)
   (let metadata-loop ()
     (receive (last-block? block-type block-length)
@@ -103,14 +103,16 @@
             (metadata-loop))))))
 
 (define* (flac-metadata port #:optional (type #f))
-  (with-flac-input-port port
-                        (λ ()
-                          (if (symbol? type)
-                              (read-flac-metadata-type type)
-                              (read-flac-metadata)))))
+  (with-flac-input-port
+   port
+   (λ ()
+     (if (symbol? type)
+         (read-flac-metadata-type type)
+         (read-flac-metadata)))))
 
 (define* (flac-file-metadata filename #:optional (type #f))
-  (with-flac-input-port (open-input-file filename #:binary #t)
-                        (λ ()
-                          (flac-read/assert-magic)
-                          (flac-metadata (current-input-port) type))))
+  (with-flac-input-port
+   (open-input-file filename #:binary #t)
+   (λ ()
+     (flac-read/assert-magic)
+     (flac-metadata (current-input-port) type))))
