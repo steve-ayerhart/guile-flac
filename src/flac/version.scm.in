@@ -1,0 +1,75 @@
+;;; version.scm -- Guile-FLAC version.
+
+;; Copyright (C) 2022 Steve Ayerhart <steve@ayerh.art>
+;;
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; The program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with the program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+;;; Commentary:
+
+;; This module contains procedures that allow to acquire information about the
+;; Guile-FLAC version in the Semantic Versioning format. [1]
+;;
+;; Guile-FLAC version consists of three parts:
+;;   MAJOR.MINOR.PATCH
+;;
+;; The procedures below allow to get any of the version part or the version as
+;; a whole.
+;;
+;; References:
+;; 1: https://semver.org/
+
+
+;;; Code:
+
+
+(define-module (flac version)
+  #:export (flac-version
+            flac-version/string
+            flac-version/major
+            flac-version/minor
+            flac-version/patch))
+
+
+(define %flac-version "@VERSION@")
+
+
+(define (flac-version/string)
+  "Get the raw Guile-FLAC version as a string."
+  %flac-version)
+
+(define (flac-version)
+  "Return the Guile-FLAC version as a list of the following form:
+'(MAJOR MINOR PATCH)"
+  (map string->number (string-split %flac-version #\.)))
+
+(define (flac-version/major)
+  "Get the MAJOR part of the Guile-FLAC version."
+  (list-ref (flac-version) 0))
+
+(define (flac-version/minor)
+  "Get the MINOR part of the Guile-FLAC version."
+  (list-ref (flac-version) 1))
+
+(define (flac-version/patch)
+  "Get the PATCH part of the Guile-FLAC version."
+  (list-ref (flac-version) 2))
+
+;;;
+
+;; Local Variables:
+;; mode: Scheme
+;; End:
+
+;;; version.in ends here

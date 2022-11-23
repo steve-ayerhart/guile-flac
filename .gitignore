@@ -1,0 +1,31 @@
+# -*- shell-script -*-
+
+# Compiled Guile modules
+*.go
+
+# Backup files
+*\~
+
+# Auto-generated files
+Makefile
+Makefile.in
+configure
+aclocal.m4
+
+config.log
+config.status
+.deps
+autom4te.cache
+
+pre-inst-env
+
+TAGS
+tags
+
+# Ignore directories and archives made by "make distcheck"
+guile-flac-*
+
+.DS_Store
+.idea
+*.log
+tmp/
