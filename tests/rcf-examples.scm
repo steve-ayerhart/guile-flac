@@ -10,6 +10,12 @@
 
   #:use-module (srfi srfi-64))
 
+(define-syntax-rule (with-tests name body ...)
+  (begin
+    (test-begin name)
+    body ...
+    (test-end name)))
+
 (define-public example-1
   #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00
             #x00 #x00 #x0f #x00 #x00 #x0f #x0a #xc4 #x42 #xf0 #x00 #x00
