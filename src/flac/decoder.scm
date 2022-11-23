@@ -171,7 +171,7 @@
      ((between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc))
      (else (values #f #f)))))
 
-                                        ; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation samples channel-assignment)
   (match channel-assignment
     ('independent samples)
