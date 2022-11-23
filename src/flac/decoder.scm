@@ -171,7 +171,7 @@
      ((between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc))
      (else (values #f #f)))))
 
-; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
+                                        ; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation samples channel-assignment)
   (match channel-assignment
     ('independent samples)
@@ -239,13 +239,12 @@
          (residual (read-residual-partitioned-rice blocksize lpc-order)))
     (restore-linear-prediction warmup residual coefs lpc-order shift)))
 
-;; TODO: clean up the channel decorrelation this is kind of ugly
 (define (read-subframes stream-info frame-header)
   (let ((channels (stream-info-channels stream-info))
         (channel-assignment (frame-header-channel-assignment frame-header)))
     (map! (λ (channel) (read-subframe frame-header channel)) (iota channels))))
 
-; TODO: actually verify the checksum
+;;; TODO: actually verify the checksum
 (define (read-frame-footer)
   (flac-read-uint 16))
 
@@ -262,7 +261,7 @@
          (blocksize (decode-block-size raw-blocksize))
          (sample-rate (decode-sample-rate stream-info raw-sample-rate))
          (crc (flac-read-uint 8)))
-    (make-frame-header
+    (%make-frame-header
      blocking-strategy
      blocksize
      sample-rate

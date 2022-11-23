@@ -19,7 +19,7 @@ include $(top_srcdir)/build-aux/am/guile.am
 
 SOURCES = \
 	version.scm \
-	decover.scm \
+	decoder.scm \
 	format.scm \
 	metadata.scm \
 	reader.scm
