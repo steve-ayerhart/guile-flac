@@ -3,7 +3,7 @@ dnl   Process this file with autoconf to produce configure.
 dnl
 
 define(GUILE_FLAC_CONFIGURE_COPYRIGHT, [[
-Copyright (C) 2017-2022 Artyom V. Poptsov <poptsov.artyom@gmail.com>
+Copyright (C) 2022 Steve Ayerhart <steve@ayerh.art>
 
 This file is part of Guile-FLAC.
 
@@ -67,6 +67,7 @@ AC_CONFIG_FILES([
     build-aux/m4/Makefile
     src/Makefile
     src/flac/Makefile
+    tests/Makefile
 ])
 
 dnl Manual pages.

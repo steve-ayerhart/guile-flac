@@ -80,7 +80,6 @@
   metadata)
 
 (define (read-flac-metadata)
-  (flac-read/assert-magic)
   (let metadata-loop ((metadata (%make-flac-metadata #f #f #f #f #f #f #f)))
     (receive (last-block? block-type block-length)
         (read-metadata-block-header)
