@@ -14,8 +14,7 @@
             flac-read-rice-sint
             with-flac-input-port
             align-to-byte
-            new-flac-reader
-            make-flac-reader
+            %make-flac-reader
             flac-read/assert-magic
             current-flac-reader))
 
@@ -25,7 +24,7 @@
 ;;; TODO: redo api? callback based?
 
 (define-record-type <flac-reader>
-  (make-flac-reader input-port bit-buffer bit-buffer-length)
+  (%make-flac-reader input-port bit-buffer bit-buffer-length)
   flac-reader?
   (input-port flac-reader-port)
   (bit-buffer flac-reader-bit-buffer set-flac-reader-bit-buffer!)
@@ -34,16 +33,11 @@
 (define (with-flac-input-port port thunk)
   (with-input-from-port port
     (λ ()
-      (parameterize ((current-flac-reader (make-flac-reader (current-input-port) 0 0)))
+      (parameterize ((current-flac-reader (%make-flac-reader (current-input-port) 0 0)))
         (thunk)))))
 
-(define (new-flac-reader port)
-  (current-flac-reader (make-flac-reader port 0 0))
-  (current-flac-reader))
-
 (define (flac-read-bits reader bits)
-  (while
-      (< (flac-reader-bit-buffer-length reader) bits)
+  (while (< (flac-reader-bit-buffer-length reader) bits)
     (let ((byte-read (get-u8 (flac-reader-port reader))))
       (set-flac-reader-bit-buffer! reader
                                    (bitwise-ior (bitwise-arithmetic-shift (flac-reader-bit-buffer reader) 8)
