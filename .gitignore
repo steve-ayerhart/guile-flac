@@ -28,4 +28,5 @@ guile-flac-*
 .DS_Store
 .idea
 *.log
+*.trs
 tmp/

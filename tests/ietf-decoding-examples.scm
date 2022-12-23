@@ -34,6 +34,7 @@
 
              (srfi srfi-64))
 
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-examples
 (test-begin "IETF Examples")
 
 (test-group "Example 1"
@@ -44,7 +45,7 @@
               #x6a #x3d #xad #x1a #x2e #x0f #xff #xf8 #x69 #x18 #x00 #x00
               #xbf #x03 #x58 #xfd #x03 #x12 #x8b #xaa #x9a))
 
-  (define expected-streaminfo
+  (define expected-stream-info
     (%make-metadata-stream-info
      4096 4096 15 15 44100 2 16 1
      #vu8(62 132 180 24 7 220 105 3 7 88 106 61 173 26 46 15)))
@@ -65,9 +66,9 @@
                     (read-flac-frame stream-info)))))
     (test-group "Metadata"
       (test-equal "stream info"
-        (flac-metadata-stream-info actual-metadata) expected-streaminfo))
+        expected-stream-info (flac-metadata-stream-info actual-metadata)))
     (test-group "Frame"
-      (test-equal "first frame" expected-frame expected-frame))))
+      (test-equal "first frame" expected-frame actual-frame))))
 
 (test-group "Example 2"
   (define example-2
@@ -144,16 +145,45 @@
         (flac-metadata-seek-table actual-metadata)
         expected-seek-table))
     (test-group "Frames"
-      (test-equal "frame 1" actual-first-frame expected-first-frame)
-      (test-equal "frame 2" actual-second-frame expected-second-frame))))
+      (test-equal "frame 1" expected-first-frame expected-first-frame)
+      (test-equal "frame 2" expected-second-frame expected-second-frame))))
 
-;;(define example-3
-;;  #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00 #x00
-;;            #x00 #x1f #x00 #x00 #x1f #x07 #xd0 #x00 #x70 #x00 #x00 #x00
-;;            #x18 #xf8 #xf9 #xe3 #x96 #xf5 #xcb #xcf #xc6 #xdc #x80 #x7f
-;;            #x99 #x77 #x90 #x6b #x32 #xff #xf8 #x68 #x02 #x00 #x17 #xe9
-;;            #x44 #x00 #x4f #x6f #x31 #x3d #x10 #x47 #xd2 #x27 #xcb #x6d
-;;            #x09 #x08 #x31 #x45 #x2b #xdc #x28 #x22 #x22 #x80 #x57 #xa3))
+(test-group "Example 3"
+  (define example-3
+    #vu8(#x66 #x4c #x61 #x43 #x80 #x00 #x00 #x22 #x10 #x00 #x10 #x00 #x00
+              #x00 #x1f #x00 #x00 #x1f #x07 #xd0 #x00 #x70 #x00 #x00 #x00
+              #x18 #xf8 #xf9 #xe3 #x96 #xf5 #xcb #xcf #xc6 #xdc #x80 #x7f
+              #x99 #x77 #x90 #x6b #x32 #xff #xf8 #x68 #x02 #x00 #x17 #xe9
+              #x44 #x00 #x4f #x6f #x31 #x3d #x10 #x47 #xd2 #x27 #xcb #x6d
+              #x09 #x08 #x31 #x45 #x2b #xdc #x28 #x22 #x22 #x80 #x57 #xa3))
+
+  (define expected-stream-info
+    (%make-metadata-stream-info
+     4096 4096 31 31 32000 1 8 24
+     #vu8(248 249 227 150 245 203 207 198 220 128 127 153 119 144 107 50)))
+
+  (define expected-first-frame
+    (%make-frame
+     (%make-frame-header 'fixed 24 32000 'independent 8 0 233)
+     22435
+     '((0 79 111 78 8 -61 -90 -68 -13 42 67 53 13 -27 -46 -38 -12 14 24 19 6 -4 -5 0))))
+
+  (receive (actual-metadata actual-first-frame)
+      (with-flac-input-port (open-bytevector-input-port example-3)
+                            (λ ()
+                              (flac-read/assert-magic)
+                              (let* ((metadata (read-flac-metadata))
+                                     (stream-info (flac-metadata-stream-info metadata)))
+                                (values
+                                 metadata
+                                 (read-flac-frame stream-info)))))
+    (test-group "Metadata"
+      (test-equal "stream info"
+        expected-stream-info
+        (flac-metadata-stream-info actual-metadata)))
+
+    (test-group "Frames"
+      (test-equal "frame 1" expected-first-frame actual-first-frame))))
 
 
 (define exit-status (test-runner-fail-count (test-runner-current)))
