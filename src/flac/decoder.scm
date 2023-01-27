@@ -107,20 +107,17 @@
   (values (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2]) (flac-read-uint 4)))
 
 (define (restore-linear-prediction warmup residuals coefficients order shift)
-  (fold (λ (residual samples)
-          (append!
-           samples
-           (list
-            (+ residual
-               (bitwise-arithmetic-shift-right
-                (fold (λ (residual coefficient predictor)
-                        (+ predictor (* residual coefficient)))
-                      0
-                      (take-right samples order)
-                      coefficients)
-                shift)))))
-        warmup
-        residuals))
+  (let ((coefficients (reverse coefficients)))
+    (fold (λ (residual samples)
+            (append
+             samples
+             (list
+              (+ residual
+                 (bitwise-arithmetic-shift-right
+                  (apply + (map * coefficients (take-right samples order)))
+                  shift)))))
+          warmup
+          residuals)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 (define (read-residual-partitioned-rice blocksize predictor-order)
@@ -181,11 +178,11 @@
            (λ (sample-0 sample-1 samples)
              (let* ((prev-samples-0 (first samples))
                     (prev-samples-1 (second samples))
-                    (side sample-1)
-                    (right (- sample-0 (bitwise-arithmetic-shift-right side 1))))
+                    (right (- sample-0 (bitwise-arithmetic-shift-right sample-1 1))))
                (list
-                (append prev-samples-0 (list right))
-                (append prev-samples-1 (list (+ right side))))))
+                (append prev-samples-0 (list (+ right sample-1)))
+                (append prev-samples-1 (list right))
+                )))
            '(() ())
            (first samples)
            (second samples)))))
@@ -237,12 +234,16 @@
          (shift (flac-read-sint 5))
          (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision))))
          (residual (read-residual-partitioned-rice blocksize lpc-order)))
-    (restore-linear-prediction warmup residual coefs lpc-order shift)))
+;    (if (< 0 shift)
+;        #f
+        (restore-linear-prediction warmup residual coefs lpc-order shift)))
 
 (define (read-subframes stream-info frame-header)
   (let ((channels (stream-info-channels stream-info))
         (channel-assignment (frame-header-channel-assignment frame-header)))
-    (map! (λ (channel) (read-subframe frame-header channel)) (iota channels))))
+    (stereo-decorrelation
+     (filter! identity (map! (λ (channel) (read-subframe frame-header channel)) (iota channels)))
+     channel-assignment)))
 
 ;;; TODO: actually verify the checksum
 (define (read-frame-footer)
