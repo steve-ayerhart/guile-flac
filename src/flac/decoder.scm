@@ -12,6 +12,8 @@
   #:use-module (ice-9 receive)
   #:export (read-flac-frame))
 
+;;; TODO: recover from bad frame
+
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-10.1-1
 (define (read/assert-frame-sync-code)
   (unless (= #b111111111111100 (flac-read-uint 15))
@@ -87,6 +89,15 @@
   (when (= 1 (flac-read-uint 1))
     (error "invalid subframe sync")))
 
+;; (define (read-subframe-wasted-bits)
+;;   (let ((shift (flac-read-uint 1)))
+;;     (if (= 1 shift)
+;;         (let wasted-loop ((unary shift))
+;;           (if (= 0 unary)
+;;               (wasted-loop (+ 1 unary))
+;;               unary))
+;;         0)))
+
 (define (read-subframe-wasted-bits)
   (if (= 1 (flac-read-uint 1))
       (let wasted-loop ([unary 0])
@@ -119,38 +130,57 @@
           warmup
           residuals)))
 
-;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 (define (read-residual-partitioned-rice blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
-    (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
+    (let ((param-bits (match coding-method ('rice 4) ('rise2 5) (_ #f)))
           (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
-          (partitions (bitwise-arithmetic-shift 1 partition-order))
-          (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
-      (let residual-loop ((sample 0)
-                          (partition 0)
-                          (parameters '())
-                          (raw-bits '())
-                          (residual '()))
+          (partitions (bitwise-arithmetic-shift 1 partition-order)))
+      (let residual-loop ((partition 0)
+                          (partition-residuals (- (bitwise-arithmetic-shift-right blocksize partition-order) predictor-order))
+                          (residuals '()))
         (if (>= partition partitions)
-            residual
+            residuals
             (let ((rice-parameter (flac-read-uint param-bits)))
               (if (< rice-parameter escape-param)
-                  (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
-                    (residual-loop (+ sample count)
-                                   (+ 1 partition)
-                                   (cons rice-parameter parameters)
-                                   (cons 0 raw-bits)
-                                   (append residual (list-ec (: c count) (flac-read-rice-sint rice-parameter)))))
-                  (let ((num-bits (flac-read-sint 5)))
-                    (residual-loop sample
-                                   (+ 1 partition)
-                                   (cons rice-parameter parameters)
-                                   (cons num-bits raw-bits)
-                                   (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
-                                     (append residual
-                                             (if (= 0 num-bits)
-                                                 (make-list order 0)
-                                                 (list-ec (: o order) (flac-read-sint num-bits))))))))))))))
+                  (residual-loop (+ partition 1)
+                                 (bitwise-arithmetic-shift-right blocksize partition-order)
+                                 (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint rice-parameter))))
+                  (let ((num-bits ((flac-read-sint 5))))
+                    (residual-loop (+ partition 1)
+                                   (bitwise-arithmetic-shift-right blocksize partition-order)
+                                   (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint num-bits))))))))))))
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
+;; (define (read-residual-partitioned-rice blocksize predictor-order)
+;;   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
+;;     (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
+;;           (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
+;;           (partitions (bitwise-arithmetic-shift 1 partition-order))
+;;           (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
+;;       (let residual-loop ((sample 0)
+;;                           (partition 0)
+;;                           (parameters '())
+;;                           (raw-bits '())
+;;                           (residual '()))
+;;         (if (>= partition partitions)
+;;             residual
+;;             (let ((rice-parameter (flac-read-uint param-bits)))
+;;               (if (< rice-parameter escape-param)
+;;                   (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
+;;                     (residual-loop (+ sample count)
+;;                                    (+ 1 partition)
+;;                                    (cons rice-parameter parameters)
+;;                                    (cons 0 raw-bits)
+;;                                    (append residual (list-ec (: c count) (flac-read-rice-sint rice-parameter)))))
+;;                   (let ((num-bits (flac-read-sint 5)))
+;;                     (residual-loop sample
+;;                                    (+ 1 partition)
+;;                                    (cons rice-parameter parameters)
+;;                                    (cons num-bits raw-bits)
+;;                                    (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
+;;                                      (append residual
+;;                                              (if (= 0 num-bits)
+;;                                                  (make-list order 0)
+;;                                                  (list-ec (: o order) (flac-read-sint num-bits))))))))))))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
@@ -172,8 +202,8 @@
 (define (stereo-decorrelation samples channel-assignment)
   (match channel-assignment
     ('independent samples)
-    ('left (list (first samples) (map! - (first samples) (second samples))))
-    ('right (list (second samples) (map! + (first samples) (second samples))))
+    ('left (list (first samples) (map - (first samples) (second samples))))
+    ('right (list (second samples) (map + (first samples) (second samples))))
     ('mid (fold
            (λ (sample-0 sample-1 samples)
              (let* ((prev-samples-0 (first samples))
@@ -242,7 +272,7 @@
   (let ((channels (stream-info-channels stream-info))
         (channel-assignment (frame-header-channel-assignment frame-header)))
     (stereo-decorrelation
-     (filter! identity (map! (λ (channel) (read-subframe frame-header channel)) (iota channels)))
+     (filter identity (map (λ (channel) (read-subframe frame-header channel)) (iota channels)))
      channel-assignment)))
 
 ;;; TODO: actually verify the checksum

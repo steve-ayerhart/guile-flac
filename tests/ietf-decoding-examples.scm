@@ -58,12 +58,12 @@
 
   (receive (actual-metadata actual-frame)
       (with-flac-input-port (open-bytevector-input-port example-1)
-        (λ ()
-          (flac-read/assert-magic)
-          (let* ((metadata (read-flac-metadata))
-                 (stream-info (flac-metadata-stream-info metadata)))
-            (values metadata
-                    (read-flac-frame stream-info)))))
+                            (λ ()
+                              (flac-read/assert-magic)
+                              (let* ((metadata (read-flac-metadata))
+                                     (stream-info (flac-metadata-stream-info metadata)))
+                                (values metadata
+                                        (read-flac-frame stream-info)))))
     (test-group "Metadata"
       (test-equal "stream info"
         expected-stream-info (flac-metadata-stream-info actual-metadata)))
@@ -125,12 +125,12 @@
 
   (receive (actual-metadata actual-first-frame actual-second-frame)
       (with-flac-input-port (open-bytevector-input-port example-2)
-        (λ ()
-          (flac-read/assert-magic)
-          (let* ((metadata (read-flac-metadata))
-                 (stream-info (flac-metadata-stream-info metadata)))
-            (values
-             metadata (read-flac-frame stream-info) (read-flac-frame stream-info)))))
+                            (λ ()
+                              (flac-read/assert-magic)
+                              (let* ((metadata (read-flac-metadata))
+                                     (stream-info (flac-metadata-stream-info metadata)))
+                                (values
+                                 metadata (read-flac-frame stream-info) (read-flac-frame stream-info)))))
     (test-group "Metadata"
       (test-equal "stream info"
         (flac-metadata-stream-info actual-metadata)

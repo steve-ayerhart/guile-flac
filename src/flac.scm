@@ -50,6 +50,7 @@
         (with-flac-input-port
          (current-input-port)
          (λ ()
+           (flac-read/assert-magic)
            (let* ((stream-info (flac-metadata-stream-info (read-flac-metadata)))
                   (sample-data-length (* (stream-info-samples stream-info)
                                          (stream-info-channels stream-info)
