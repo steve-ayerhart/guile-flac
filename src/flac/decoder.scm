@@ -61,9 +61,9 @@
     ((#b1010) 48000)
     ((#b1011) 96000)
     ((#b1100) (* 1000 (flac-read-uint 8)) ; sample rate in kHz
-    ((#b1101) (flac-read-uint 16)) ; sample rate in Hz
-    ((#b1110) (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
-    ((#b1111) 'invalid))))
+     ((#b1101) (flac-read-uint 16)) ; sample rate in Hz
+     ((#b1110) (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
+     ((#b1111) 'invalid))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-number
 (define (flac-read-coded-number)
@@ -89,21 +89,12 @@
   (when (= 1 (flac-read-uint 1))
     (error "invalid subframe sync")))
 
-;; (define (read-subframe-wasted-bits)
-;;   (let ((shift (flac-read-uint 1)))
-;;     (if (= 1 shift)
-;;         (let wasted-loop ((unary shift))
-;;           (if (= 0 unary)
-;;               (wasted-loop (+ 1 unary))
-;;               unary))
-;;         0)))
-
 (define (read-subframe-wasted-bits)
   (if (= 1 (flac-read-uint 1))
-      (let wasted-loop ([unary 0])
+      (let wasted-loop ([unary 1])
         (if (= 0 (flac-read-uint 1))
             (wasted-loop (+ 1 unary))
-            (+ 1 unary)))
+            unary))
       0))
 
 (define (calculate-sample-depth bps wasted-bits channel-assignment channel)
@@ -118,69 +109,40 @@
   (values (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2]) (flac-read-uint 4)))
 
 (define (restore-linear-prediction warmup residuals coefficients order shift)
-  (let ((coefficients (reverse coefficients)))
-    (fold (λ (residual samples)
-            (append
-             samples
-             (list
-              (+ residual
-                 (bitwise-arithmetic-shift-right
-                  (apply + (map * coefficients (take-right samples order)))
-                  shift)))))
-          warmup
-          residuals)))
+  (fold (λ (residual samples)
+          (append
+           samples
+           (list
+            (+ residual
+               (bitwise-arithmetic-shift-right
+                (apply + (map * coefficients (take-right samples order)))
+                shift)))))
+        warmup
+        residuals))
 
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 (define (read-residual-partitioned-rice blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
-    (let ((param-bits (match coding-method ('rice 4) ('rise2 5) (_ #f)))
-          (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
-          (partitions (bitwise-arithmetic-shift 1 partition-order)))
+    (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ (error "bad residual coding method"))))
+          (escape-param (match coding-method ('rice #xf) ('rice2 #x1f) (_ (error "bad residual coding method"))))
+          (total-partitions (bitwise-arithmetic-shift 1 partition-order)))
       (let residual-loop ((partition 0)
-                          (partition-residuals (- (bitwise-arithmetic-shift-right blocksize partition-order) predictor-order))
+                          (total-residual-samples (- (bitwise-arithmetic-shift-right blocksize partition-order) predictor-order))
                           (residuals '()))
-        (if (>= partition partitions)
+        (if (>= partition total-partitions)
             residuals
             (let ((rice-parameter (flac-read-uint param-bits)))
               (if (< rice-parameter escape-param)
                   (residual-loop (+ partition 1)
                                  (bitwise-arithmetic-shift-right blocksize partition-order)
-                                 (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint rice-parameter))))
-                  (let ((num-bits ((flac-read-sint 5))))
+                                 (append residuals (list-ec (: c total-residual-samples) (flac-read-rice-sint rice-parameter))))
+                  (let ((num-bits (flac-read-sint 5)))
                     (residual-loop (+ partition 1)
                                    (bitwise-arithmetic-shift-right blocksize partition-order)
-                                   (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint num-bits))))))))))))
-;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
-;; (define (read-residual-partitioned-rice blocksize predictor-order)
-;;   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
-;;     (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
-;;           (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
-;;           (partitions (bitwise-arithmetic-shift 1 partition-order))
-;;           (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
-;;       (let residual-loop ((sample 0)
-;;                           (partition 0)
-;;                           (parameters '())
-;;                           (raw-bits '())
-;;                           (residual '()))
-;;         (if (>= partition partitions)
-;;             residual
-;;             (let ((rice-parameter (flac-read-uint param-bits)))
-;;               (if (< rice-parameter escape-param)
-;;                   (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
-;;                     (residual-loop (+ sample count)
-;;                                    (+ 1 partition)
-;;                                    (cons rice-parameter parameters)
-;;                                    (cons 0 raw-bits)
-;;                                    (append residual (list-ec (: c count) (flac-read-rice-sint rice-parameter)))))
-;;                   (let ((num-bits (flac-read-sint 5)))
-;;                     (residual-loop sample
-;;                                    (+ 1 partition)
-;;                                    (cons rice-parameter parameters)
-;;                                    (cons num-bits raw-bits)
-;;                                    (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
-;;                                      (append residual
-;;                                              (if (= 0 num-bits)
-;;                                                  (make-list order 0)
-;;                                                  (list-ec (: o order) (flac-read-sint num-bits))))))))))))))
+                                   (append residuals
+                                           (if (= 0 total-residual-samples)
+                                               (make-list total-residual-samples 0)
+                                               (list-ec (: c total-residual-samples) (flac-read-sint num-bits)))))))))))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
@@ -264,9 +226,9 @@
          (shift (flac-read-sint 5))
          (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision))))
          (residual (read-residual-partitioned-rice blocksize lpc-order)))
-;    (if (< 0 shift)
-;        #f
-        (restore-linear-prediction warmup residual coefs lpc-order shift)))
+                                        ;    (if (< 0 shift)
+                                        ;        #f
+    (restore-linear-prediction warmup residual coefs lpc-order shift)))
 
 (define (read-subframes stream-info frame-header)
   (let ((channels (stream-info-channels stream-info))
