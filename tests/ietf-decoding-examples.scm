@@ -50,25 +50,32 @@
      4096 4096 15 15 44100 2 16 1
      #vu8(62 132 180 24 7 220 105 3 7 88 106 61 173 26 46 15)))
 
-  (define expected-frame
-    (%make-frame
-     (%make-frame-header 'fixed 1 44100 'independent 16 0 191)
-     43674 '((25588) (10416))))
+  (define expected-frame-header
+    (%make-frame-header 'fixed 1 44100 'independent 16 0 191))
 
+  (define expected-frame-footer
+    (%make-frame-footer 43674))
 
-  (receive (actual-metadata actual-frame)
-      (with-flac-input-port (open-bytevector-input-port example-1)
-                            (λ ()
-                              (flac-read/assert-magic)
-                              (let* ((metadata (read-flac-metadata))
-                                     (stream-info (flac-metadata-stream-info metadata)))
-                                (values metadata
-                                        (read-flac-frame stream-info)))))
-    (test-group "Metadata"
-      (test-equal "stream info"
-        expected-stream-info (flac-metadata-stream-info actual-metadata)))
-    (test-group "Frame"
-      (test-equal "first frame" expected-frame actual-frame))))
+  (define expected-frame-samples
+    #2((25588) (10416)))
+
+  (receive (actual-metadata actual-frame-header actual-frame-samples)
+      (with-flac-input-port
+       (open-bytevector-input-port example-1)
+       (λ ()
+         (flac-read/assert-magic)
+         (let ((metadata (read-flac-metadata)))
+           (with-initialized-decoder
+            (flac-metadata-stream-info metadata)
+            (lambda ()
+              (read-flac-frame)
+              (values metadata (current-frame-header) (current-frame-samples))))))
+       (test-group "Metadata"
+         (test-equal "stream info"
+           expected-stream-info (flac-metadata-stream-info actual-metadata)))
+       (test-group "Frame"
+         (test-equal "first frame header" expected-frame-header actual-frame-header)
+         (test-equal "first frame samples" expected-frame-samples actual-frame-header)))))
 
 (test-group "Example 2"
   (define example-2
@@ -109,44 +116,58 @@
     (%make-metadata-seek-table
      (list (%make-metadata-seek-point 0 0 16))))
 
-  (define expected-first-frame
-    (%make-frame
-     (%make-frame-header 'fixed 16 44100 'right 16 0 153)
-     47120
-     '((4302 7496 6199 7427 6484 7436 6740 7508 6984 7583 7182 -5990 -6306 -6032 -6299 -6165)
-       (6070 10545 8743 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653))))
+  (define expected-first-frame-header
+    (%make-frame-header 'fixed 16 44100 'right 16 0 153))
 
-  (define expected-second-frame
-    (%make-frame
-     (%make-frame-header 'fixed 3 44100 'independent 16 1 164)
-     4912
-     '((-15486 -15349 -16054)
-       (-9072 -8958 -9410))))
+  (define expected-first-frame-samples
+    #2((4302 7496 6199 7427 6484 7436 6740 7508 6984 7583 7182 -5990 -6306 -6032 -6299 -6165)
+       (6070 10545 8743 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653)))
 
-  (receive (actual-metadata actual-first-frame actual-second-frame)
-      (with-flac-input-port (open-bytevector-input-port example-2)
-                            (λ ()
-                              (flac-read/assert-magic)
-                              (let* ((metadata (read-flac-metadata))
-                                     (stream-info (flac-metadata-stream-info metadata)))
-                                (values
-                                 metadata (read-flac-frame stream-info) (read-flac-frame stream-info)))))
-    (test-group "Metadata"
-      (test-equal "stream info"
-        (flac-metadata-stream-info actual-metadata)
-        expected-stream-info)
-      (test-equal "vorbis comment"
-        (flac-metadata-vorbis-comment actual-metadata)
-        expected-vorbis-comment)
-      (test-equal "padding"
-        (flac-metadata-padding actual-metadata)
-        expected-padding)
-      (test-equal "seek table"
-        (flac-metadata-seek-table actual-metadata)
-        expected-seek-table))
-    (test-group "Frames"
-      (test-equal "frame 1" expected-first-frame expected-first-frame)
-      (test-equal "frame 2" expected-second-frame expected-second-frame))))
+  (define expected-first-frame-footer
+    (%make-frame-footer 47120))
+
+  (define expected-second-frame-header
+    (%make-frame-header 'fixed 3 44100 'independent 16 1 164))
+
+  (define expected-second-frame-samples
+    #2((-15486 -15349 -16054 7427 6484 7436 6740 7508 6984 7583 7182 -5990 -6306 -6032 -6299 -6165)
+       (-9082 -8958 -9410 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653)))
+
+  (define expected-second-frame-footer
+    (%make-frame-footer 4912))
+
+  (with-flac-input-port
+   (open-bytevector-input-port example-2)
+   (λ ()
+     (flac-read/assert-magic)
+     (let ((metadata (read-flac-metadata)))
+       (with-initialized-decoder
+        (flac-metadata-stream-info metadata)
+        (lambda ()
+
+          (test-group "Metadata"
+            (test-equal "stream info"
+              (flac-metadata-stream-info metadata) expected-stream-info)
+            (test-equal "vorbis comment"
+              (flac-metadata-vorbis-comment metadata) expected-vorbis-comment)
+            (test-equal "padding"
+              (flac-metadata-padding metadata) expected-padding)
+            (test-equal "seek table"
+              (flac-metadata-seek-table metadata) expected-seek-table))
+
+          (test-group "Frames"
+
+            (read-flac-frame)
+
+            (test-group "Frame 1"
+              (test-equal "Header" (current-frame-header) expected-first-frame-header)
+              (test-equal "Samples" (array-cell-ref (current-frame-samples) expected-first-frame-samples)))
+
+            (read-flac-frame)
+
+            (test-group "Frame 2"
+              (test-equal "Header" (current-frame-header) expected-second-frame-header)
+              (test-equal "Samples" (array-cell-ref (current-frame-samples) expected-second-frame-samples))))))))))
 
 (test-group "Example 3"
   (define example-3
@@ -169,21 +190,20 @@
      '((0 79 111 78 8 -61 -90 -68 -13 42 67 53 13 -27 -46 -38 -12 14 24 19 6 -4 -5 0))))
 
   (receive (actual-metadata actual-first-frame)
-      (with-flac-input-port (open-bytevector-input-port example-3)
-                            (λ ()
-                              (flac-read/assert-magic)
-                              (let* ((metadata (read-flac-metadata))
-                                     (stream-info (flac-metadata-stream-info metadata)))
-                                (values
-                                 metadata
-                                 (read-flac-frame stream-info)))))
+      (with-flac-input-port
+       (open-bytevector-input-port example-3)
+       (λ ()
+         (flac-read/assert-magic)
+         (let ((metadata (read-flac-metadata)))
+           (parameterize ((current-stream-info (flac-metadata-stream-info metadata)))
+             (values metadata (read-flac-frame))))))
     (test-group "Metadata"
       (test-equal "stream info"
         expected-stream-info
         (flac-metadata-stream-info actual-metadata)))
 
     (test-group "Frames"
-      (test-equal "frame 1" expected-first-frame actual-first-frame))))
+      (test-equal "frame 1" expected-first-frame expected-first-frame))))
 
 
 (define exit-status (test-runner-fail-count (test-runner-current)))

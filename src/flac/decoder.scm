@@ -3,6 +3,7 @@
   #:use-module (flac format)
 
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-9 gnu)
   #:use-module (srfi srfi-42)
   #:use-module (srfi srfi-11)
 
@@ -10,10 +11,22 @@
 
   #:use-module (ice-9 match)
   #:use-module (ice-9 receive)
-  #:export (read-flac-frame))
+  #:export (read-flac-frame
+            current-stream-info
+            current-frame-header
+            current-subframe-header
+            current-frame-samples
+            current-frame-footer
+            with-initialized-decoder))
+
+;; we try to avoid gc so we define some parameters to mutate/reuse objects
+(define current-frame-header (make-parameter #f))
+(define current-subframe-header (make-parameter #f))
+(define current-stream-info (make-parameter #f))
+(define current-frame-samples (make-parameter #f))
+(define current-frame-footer (make-parameter #f))
 
 ;;; TODO: recover from bad frame
-
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-10.1-1
 (define (read/assert-frame-sync-code)
   (unless (= #b111111111111100 (flac-read-uint 15))
@@ -46,9 +59,9 @@
    ((between? raw #b1000 #b1111) (* 256 (expt 2 (- raw 8))))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-sample-rate-bits
-(define (decode-sample-rate stream-info raw)
+(define (decode-sample-rate raw)
   (case raw
-    ((#b0000) (stream-info-sample-rate stream-info))
+    ((#b0000) (stream-info-sample-rate (current-stream-info)))
     ((#b0001) 88200)
     ((#b0010) 17640)
     ((#b0011) 19200)
@@ -61,9 +74,9 @@
     ((#b1010) 48000)
     ((#b1011) 96000)
     ((#b1100) (* 1000 (flac-read-uint 8)) ; sample rate in kHz
-    ((#b1101) (flac-read-uint 16)) ; sample rate in Hz
-    ((#b1110) (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
-    ((#b1111) 'invalid))))
+     ((#b1101) (flac-read-uint 16)) ; sample rate in Hz
+     ((#b1110) (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
+     ((#b1111) 'invalid))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-number
 (define (flac-read-coded-number)
@@ -74,9 +87,9 @@
           (flac-read-uint 8)
           (coded-number-loop (bitwise-and (bitwise-arithmetic-shift coded-sample-number 1) #xff))))))
 
-(define (decode-bits-per-sample stream-info raw)
+(define (decode-bits-per-sample raw)
   (case raw
-    ((#b000) (stream-info-bits-per-sample stream-info))
+    ((#b000) (stream-info-bits-per-sample (current-stream-info)))
     ((#b001) 8)
     ((#b010) 12)
     ((#b011) 'reserved)
@@ -88,15 +101,6 @@
 (define (read/assert-subframe-sync)
   (when (= 1 (flac-read-uint 1))
     (error "invalid subframe sync")))
-
-;; (define (read-subframe-wasted-bits)
-;;   (let ((shift (flac-read-uint 1)))
-;;     (if (= 1 shift)
-;;         (let wasted-loop ((unary shift))
-;;           (if (= 0 unary)
-;;               (wasted-loop (+ 1 unary))
-;;               unary))
-;;         0)))
 
 (define (read-subframe-wasted-bits)
   (if (= 1 (flac-read-uint 1))
@@ -117,70 +121,39 @@
 (define (read-entropy-coding-method-info)
   (values (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2]) (flac-read-uint 4)))
 
-(define (restore-linear-prediction warmup residuals coefficients order shift)
-  (let ((coefficients (reverse coefficients)))
-    (fold (λ (residual samples)
-            (append
-             samples
-             (list
+(define (restore-linear-prediction channel coefficients order shift)
+  (let ((blocksize (frame-header-blocksize (current-frame-header))))
+    (do-ec (: i order blocksize)
+           (let ((residual (array-cell-ref (current-frame-samples) channel i)))
+             (array-cell-set!
+              (current-frame-samples)
               (+ residual
-                 (bitwise-arithmetic-shift-right
-                  (apply + (map * coefficients (take-right samples order)))
-                  shift)))))
-          warmup
-          residuals)))
+                 (bitwise-arithmetic-shift
+                  (sum-ec (: c (index j) coefficients)
+                          (* (array-cell-ref (current-frame-samples) channel (- (- i 1) j)) c))
+                  shift))
+              channel i)))))
 
-(define (read-residual-partitioned-rice blocksize predictor-order)
+(define (read-residual-partitioned-rice channel blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
-    (let ((param-bits (match coding-method ('rice 4) ('rise2 5) (_ #f)))
+    (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
           (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
-          (partitions (bitwise-arithmetic-shift 1 partition-order)))
-      (let residual-loop ((partition 0)
-                          (partition-residuals (- (bitwise-arithmetic-shift-right blocksize partition-order) predictor-order))
-                          (residuals '()))
-        (if (>= partition partitions)
-            residuals
-            (let ((rice-parameter (flac-read-uint param-bits)))
-              (if (< rice-parameter escape-param)
-                  (residual-loop (+ partition 1)
-                                 (bitwise-arithmetic-shift-right blocksize partition-order)
-                                 (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint rice-parameter))))
-                  (let ((num-bits ((flac-read-sint 5))))
-                    (residual-loop (+ partition 1)
-                                   (bitwise-arithmetic-shift-right blocksize partition-order)
-                                   (append residuals (list-ec (: c partition-residuals) (flac-read-rice-sint num-bits))))))))))))
+          (partitions (bitwise-arithmetic-shift 1 partition-order))
+          (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
+      (do ((partition 0 (1+ partition)))
+          ((>= partition partitions))
+        (let ((rice-parameter (flac-read-uint param-bits)))
+          (if (< rice-parameter escape-param)
+              (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
+                (do-ec (:range i 0 count)
+                       (array-cell-set! (current-frame-samples) (flac-read-rice-sint rice-parameter) channel (1+ i))))
+              (let ((num-bits (flac-read-sint 5)))
+                (do-ec (:range i 0 count)
+                       (array-cell-set! (current-frame-samples) (flac-read-rice-sint num-bits) channel (1+ i))))))))))
+
+
+
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
-;; (define (read-residual-partitioned-rice blocksize predictor-order)
-;;   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
-;;     (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
-;;           (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
-;;           (partitions (bitwise-arithmetic-shift 1 partition-order))
-;;           (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
-;;       (let residual-loop ((sample 0)
-;;                           (partition 0)
-;;                           (parameters '())
-;;                           (raw-bits '())
-;;                           (residual '()))
-;;         (if (>= partition partitions)
-;;             residual
-;;             (let ((rice-parameter (flac-read-uint param-bits)))
-;;               (if (< rice-parameter escape-param)
-;;                   (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
-;;                     (residual-loop (+ sample count)
-;;                                    (+ 1 partition)
-;;                                    (cons rice-parameter parameters)
-;;                                    (cons 0 raw-bits)
-;;                                    (append residual (list-ec (: c count) (flac-read-rice-sint rice-parameter)))))
-;;                   (let ((num-bits (flac-read-sint 5)))
-;;                     (residual-loop sample
-;;                                    (+ 1 partition)
-;;                                    (cons rice-parameter parameters)
-;;                                    (cons num-bits raw-bits)
-;;                                    (let ((order (- partition-samples (if (= 0 partition) predictor-order 0))))
-;;                                      (append residual
-;;                                              (if (= 0 num-bits)
-;;                                                  (make-list order 0)
-;;                                                  (list-ec (: o order) (flac-read-sint num-bits))))))))))))))
 
 ;;; 000000 constant
 ;;; 000001 verbatim
@@ -198,64 +171,80 @@
      ((between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc))
      (else (values #f #f)))))
 
+(define (left-stereo-decorrelation l r)
+  (array-set! l (- (array-ref l) (array-ref r))))
+(define (right-stereo-decorrelation l r)
+  (array-cell-set! (current-frame-samples) (+ (array-ref l) (array-ref r)) 0))
+                                        ;  (array-set! r (+ (array-ref l) (array-ref r))))
+
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
-(define (stereo-decorrelation samples channel-assignment)
-  (match channel-assignment
-    ('independent samples)
-    ('left (list (first samples) (map - (first samples) (second samples))))
-    ('right (list (second samples) (map + (first samples) (second samples))))
-    ('mid (fold
-           (λ (sample-0 sample-1 samples)
-             (let* ((prev-samples-0 (first samples))
-                    (prev-samples-1 (second samples))
-                    (right (- sample-0 (bitwise-arithmetic-shift-right sample-1 1))))
-               (list
-                (append prev-samples-0 (list (+ right sample-1)))
-                (append prev-samples-1 (list right))
-                )))
-           '(() ())
-           (first samples)
-           (second samples)))))
+(define (stereo-decorrelation channel-assignment)
+  (let ((blocksize (frame-header-blocksize (current-frame-header))))
+    (match channel-assignment
+      ('independent #t)
+      ('left
+       (do-ec (:range b 0 blocksize)
+              (array-cell-set! (current-frame-samples) (- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
+      ('right
+       (do-ec (:range b 0 blocksize)
+              (array-cell-set! (current-frame-samples) (+ (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 0 b)))
+      ('mid
+       (do-ec (:range b 0 blocksize)
+              (let* ((side (array-cell-ref (current-frame-samples) 1 b))
+                     (right (- (array-cell-ref (current-frame-samples) 0 b) (bitwise-arithmetic-shift-right side 1))))
+                (array-cell-set! (current-frame-samples) right 1 b)
+                (array-cell-set! (current-frame-samples) (+ right side) 0 b)))))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-subframe-header
 (define (read-subframe-header)
   (read/assert-subframe-sync)
   (receive (order type)
       (read-subframe-type)
-    (%make-subframe-header type order (read-subframe-wasted-bits))))
+    (set-subframe-header-subframe-type! (current-subframe-header) type)
+    (set-subframe-header-predictor-order! (current-subframe-header) order)
+    (set-subframe-header-wasted-bits! (current-subframe-header) (read-subframe-wasted-bits))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-subframes
-(define (read-subframe frame-header channel)
-  (let* ((subframe-header (read-subframe-header))
-         (wasted-bits (subframe-header-wasted-bits subframe-header))
-         (predictor-order (subframe-header-predictor-order subframe-header))
+(define (read-subframe channel)
+  (read-subframe-header)
+  (format #t "subframe header: ~s\n" (current-subframe-header))
+  (let* ((wasted-bits (subframe-header-wasted-bits (current-subframe-header)))
+         (predictor-order (subframe-header-predictor-order (current-subframe-header)))
          (sample-depth (calculate-sample-depth
-                        (frame-header-bits-per-sample frame-header)
+                        (frame-header-bits-per-sample (current-frame-header))
                         wasted-bits
-                        (frame-header-channel-assignment frame-header)
+                        (frame-header-channel-assignment (current-frame-header))
                         channel))
-         (blocksize (frame-header-blocksize frame-header)))
-    (match (subframe-header-subframe-type subframe-header)
-      ('constant (read-subframe-constant blocksize sample-depth wasted-bits))
-      ('verbatim (read-subframe-verbatim blocksize sample-depth wasted-bits))
-      ('fixed (read-subframe-fixed predictor-order blocksize sample-depth))
+         (blocksize (frame-header-blocksize (current-frame-header))))
+    (match (subframe-header-subframe-type (current-subframe-header))
+      ('constant (read-subframe-constant channel blocksize sample-depth wasted-bits))
+      ('verbatim (read-subframe-verbatim channel blocksize sample-depth wasted-bits))
+      ('fixed (read-subframe-fixed channel predictor-order blocksize sample-depth))
       ('lpc (read-subframe-lpc predictor-order blocksize sample-depth)))))
 
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.1.1
-(define (read-subframe-verbatim blocksize sample-depth wasted-bits)
-  (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
+(define (read-subframe-verbatim channel blocksize sample-depth wasted-bits)
+  (do-ec (:range block 0 blocksize)
+         (array-cell-set! (current-frame-samples) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits) channel block)))
+                                        ;  (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.2.1
-(define (read-subframe-constant blocksize sample-depth wasted-bits)
-  (make-list blocksize (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
+(define (read-subframe-constant channel blocksize sample-depth wasted-bits)
+  (let ((sample (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
+    (do-ec (:range block 0 blocksize)
+           (array-cell-set! (current-frame-samples) sample channel block))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-fixed-predictor-subframe
-(define (read-subframe-fixed predictor-order blocksize sample-depth)
-  (let ((warmup (list-ec (: o predictor-order) (flac-read-sint sample-depth)))
-        (fixed-coefficients '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1)))
-        (residual (read-residual-partitioned-rice blocksize predictor-order)))
-    (restore-linear-prediction warmup residual (list-ref fixed-coefficients predictor-order) predictor-order 0)))
+(define (read-subframe-fixed channel predictor-order blocksize sample-depth)
+  (let ((frame (frame-header-frame/sample-number (current-frame-header)))
+        (fixed-coefficients '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1))))
+    ;; warmup
+    (do-ec (:range po 0 predictor-order)
+           (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel frame))
+    ;; residuals
+    (read-residual-partitioned-rice channel blocksize predictor-order)
+    (restore-linear-prediction channel (list-ref fixed-coefficients predictor-order) predictor-order 0)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-linear-predictor-subframe
 (define (read-subframe-lpc lpc-order blocksize sample-depth)
@@ -263,47 +252,62 @@
          (precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
          (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision))))
-         (residual (read-residual-partitioned-rice blocksize lpc-order)))
-;    (if (< 0 shift)
-;        #f
-        (restore-linear-prediction warmup residual coefs lpc-order shift)))
+         (residual (read-residual-partitioned-rice 0 blocksize lpc-order)))
+    (restore-linear-prediction 99 coefs lpc-order shift)))
 
-(define (read-subframes stream-info frame-header)
-  (let ((channels (stream-info-channels stream-info))
-        (channel-assignment (frame-header-channel-assignment frame-header)))
-    (stereo-decorrelation
-     (filter identity (map (λ (channel) (read-subframe frame-header channel)) (iota channels)))
-     channel-assignment)))
+(define (read-subframes)
+  (let ((channels (stream-info-channels (current-stream-info)))
+        (channel-assignment (frame-header-channel-assignment (current-frame-header))))
+    (do ((channel 0 (1+ channel)))
+        ((>= channel channels))
+      (read-subframe channel))))
 
 ;;; TODO: actually verify the checksum
 (define (read-frame-footer)
-  (flac-read-uint 16))
+  (set-frame-footer-crc! (current-frame-footer) (flac-read-uint 16)))
+
+(define (set-current-frame-header-fields! blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
+  (set-frame-header-blocking-strategy! (current-frame-header) blocking-strategy)
+  (set-frame-header-blocksize! (current-frame-header) blocksize)
+  (set-frame-header-sample-rate! (current-frame-header) sample-rate)
+  (set-frame-header-channel-assignment! (current-frame-header) channel-assignment)
+  (set-frame-header-bits-per-sample! (current-frame-header) bits-per-sample)
+  (set-frame-header-frame/sample-number! (current-frame-header) frame/sample-number)
+  (set-frame-header-crc! (current-frame-header) crc))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-frame-header
-(define-public (read-frame-header stream-info)
+(define-public (read-frame-header)
   (read/assert-frame-sync-code)
   (let* ((blocking-strategy (decode-blocking-strategy (flac-read-uint 1)))
          (raw-blocksize (flac-read-uint 4))
          (raw-sample-rate (flac-read-uint 4))
          (channel-assignment (decode-channel-assignment (flac-read-uint 4)))
-         (bits-per-sample (decode-bits-per-sample stream-info (flac-read-uint 3)))
+         (bits-per-sample (decode-bits-per-sample (flac-read-uint 3)))
          (ignore-reserved (flac-read-uint 1))
          (frame/sample-number (flac-read-coded-number))
          (blocksize (decode-block-size raw-blocksize))
-         (sample-rate (decode-sample-rate stream-info raw-sample-rate))
+         (sample-rate (decode-sample-rate raw-sample-rate))
          (crc (flac-read-uint 8)))
-    (%make-frame-header
-     blocking-strategy
-     blocksize
-     sample-rate
-     channel-assignment
-     bits-per-sample
-     frame/sample-number
-     crc)))
+    (set-current-frame-header-fields!
+     blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)))
 
-(define (read-flac-frame stream-info)
-  (let* ((header (read-frame-header stream-info))
-         (samples (read-subframes stream-info header)))
+(define (read-flac-frame)
+  (read-frame-header)
+  (let ((channel-assignment (frame-header-channel-assignment (current-frame-header))))
+    (format #t "frame header ~s\n" (current-frame-header))
+    (read-subframes)
+    (stereo-decorrelation channel-assignment)
     (align-to-byte)
-    (let ((footer (read-frame-footer)))
-      (%make-frame header footer samples))))
+    (read-frame-footer)))
+
+(define (with-initialized-decoder stream-info thunk)
+  (let* ((channels (stream-info-channels stream-info))
+         (samples (stream-info-max-block-size stream-info))
+         (channels-array (make-array 0 channels samples)))
+
+    (parameterize ((current-stream-info stream-info)
+                   (current-frame-header (%make-frame-header #f #f #f #f #f #f #f))
+                   (current-subframe-header (%make-subframe-header #f #f #f))
+                   (current-frame-footer (%make-frame-footer #f))
+                   (current-frame-samples channels-array))
+      (thunk))))

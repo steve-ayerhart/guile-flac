@@ -14,19 +14,22 @@
             flac-entropy-coding-method-type
 
             %make-frame-header
-            frame-header-strategy frame-header-blocksize frame-header-sample-rate
-            frame-header-channel-assignment frame-header-bits-per-sample
-            frame-header-frame/sample-number frame-header-crc
-
-            %make-subframe
-            subframe?
-            subframe-header subframe-data subframe-samples
+            frame-header-blocking-strategy set-frame-header-blocking-strategy!
+            frame-header-blocksize set-frame-header-blocksize!
+            frame-header-sample-rate set-frame-header-sample-rate!
+            frame-header-channel-assignment set-frame-header-channel-assignment!
+            frame-header-bits-per-sample set-frame-header-bits-per-sample!
+            frame-header-frame/sample-number set-frame-header-frame/sample-number!
+            frame-header-crc set-frame-header-crc!
 
             %make-subframe-header
-            subframe-header-subframe-type subframe-header-predictor-order subframe-header-wasted-bits
+            subframe-header-subframe-type set-subframe-header-subframe-type!
+            subframe-header-predictor-order set-subframe-header-predictor-order!
+            subframe-header-wasted-bits set-subframe-header-wasted-bits!
 
             %make-frame-footer
             frame-footer-crc
+            set-frame-footer-crc!
 
             %make-frame
             frame-header frame-subframes frame-footer frame-samples
@@ -84,9 +87,9 @@
 (define-record-type <subframe-header>
   (%make-subframe-header subframe-type predictor-order wasted-bits)
   subframe-header?
-  (subframe-type subframe-header-subframe-type)
-  (predictor-order subframe-header-predictor-order)
-  (wasted-bits subframe-header-wasted-bits))
+  (subframe-type subframe-header-subframe-type set-subframe-header-subframe-type!)
+  (predictor-order subframe-header-predictor-order set-subframe-header-predictor-order!)
+  (wasted-bits subframe-header-wasted-bits set-subframe-header-wasted-bits!))
 
 (define-record-type <subframe>
   (%make-subframe header data)
@@ -97,18 +100,18 @@
 (define-record-type <frame-header>
   (%make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
   frame-header?
-  (blocking-strategy frame-header-blocking-strategy)
-  (blocksize frame-header-blocksize)
-  (sample-rate frame-header-sample-rate)
-  (channel-assignment frame-header-channel-assignment)
-  (bits-per-sample frame-header-bits-per-sample)
-  (frame/sample-number frame-header-frame/sample-number)
-  (crc frame-header-crc))
+  (blocking-strategy frame-header-blocking-strategy set-frame-header-blocking-strategy!)
+  (blocksize frame-header-blocksize set-frame-header-blocksize!)
+  (sample-rate frame-header-sample-rate set-frame-header-sample-rate!)
+  (channel-assignment frame-header-channel-assignment set-frame-header-channel-assignment!)
+  (bits-per-sample frame-header-bits-per-sample set-frame-header-bits-per-sample!)
+  (frame/sample-number frame-header-frame/sample-number set-frame-header-frame/sample-number!)
+  (crc frame-header-crc set-frame-header-crc!))
 
 (define-record-type <frame-footer>
   (%make-frame-footer crc)
   frame-footer?
-  (crc frame-footer-crc))
+  (crc frame-footer-crc set-frame-footer-crc!))
 
 (define-record-type <frame>
   (%make-frame header footer samples)
@@ -117,7 +120,7 @@
   (footer frame-footer)
   (samples frame-samples))
 
-; metadata
+                                        ; metadata
 (define flac-metadata-type
   (make-enumeration '(stream-info
                       padding
@@ -141,10 +144,10 @@
   (samples stream-info-samples)
   (md5 stream-info-md5))
 
-;(set-record-type-printer!
-; <stream-info>
-; (λ (record port)
-;   (format port "#<stream-info>")))
+                                        ;(set-record-type-printer!
+                                        ; <stream-info>
+                                        ; (λ (record port)
+                                        ;   (format port "#<stream-info>")))
 
 (define-record-type <seek-table>
   (%make-metadata-seek-table seek-points)
@@ -209,26 +212,26 @@
 (define flac-picture-type
   (make-enumeration
    '(other
-    file-icon
-    other-file-icon
-    front-cover
-    back-cover
-    leaflet-page
-    media
-    lead-artist/performer/soloist
-    artist/performer
-    conductor
-    band/orchestra
-    composer
-    lyricist/text-writer
-    recording-location
-    during-recording
-    during-performance
-    movie/video-screen-capture
-    bright-coloured-fish
-    illustration
-    band/artist-logotype
-    publisher/studio-logotype)))
+     file-icon
+     other-file-icon
+     front-cover
+     back-cover
+     leaflet-page
+     media
+     lead-artist/performer/soloist
+     artist/performer
+     conductor
+     band/orchestra
+     composer
+     lyricist/text-writer
+     recording-location
+     during-recording
+     during-performance
+     movie/video-screen-capture
+     bright-coloured-fish
+     illustration
+     band/artist-logotype
+     publisher/studio-logotype)))
 
 (define-record-type <picture>
   (%make-metadata-picture type mime-type description width height depth colors data)
@@ -247,10 +250,10 @@
  (λ (record port)
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
 
-; (set-record-type-printer!
-;  <frame>
-;  (λ (record port)
-;    (format port "#<<frame> header: ~a>" (frame-header record))))
+                                        ; (set-record-type-printer!
+                                        ;  <frame>
+                                        ;  (λ (record port)
+                                        ;    (format port "#<<frame> header: ~a>" (frame-header record))))
 
 (define-record-type <flac-metadata>
   (%make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
