@@ -266,13 +266,13 @@
   (cuesheet flac-metadata-cuesheet set-flac-metadata-cuesheet!)
   (pictures flac-metadata-pictures set-flac-metadata-pictures!))
 
-(set-record-type-printer!
- <flac-metadata>
- (λ (record port)
-   (format port "#<<flac-metadata>")
-   (let ((getters '(flac-metadata-stream-info flac-metadata-vorbis-comment flac-metadata-application flac-metadata-cuesheet flac-metadata-pictures flac-metadata-seek-table flac-metadata-padding)))
-     (for-each (λ (getter)
-                 (when ((primitive-eval getter) record)
-                   (regexp-substitute/global port "flac-metadata-" (symbol->string getter) 'pre " " 'post)))
-               getters))
-   (format port ">")))
+;(set-record-type-printer!
+; <flac-metadata>
+; (λ (record port)
+;   (format port "#<<flac-metadata>")
+;   (let ((getters '(flac-metadata-stream-info flac-metadata-vorbis-comment flac-metadata-application flac-metadata-cuesheet flac-metadata-pictures flac-metadata-seek-table flac-metadata-padding)))
+;     (for-each (λ (getter)
+;                 (when ((primitive-eval getter) record)
+;                   (regexp-substitute/global port "flac-metadata-" (symbol->string getter) 'pre " " 'post)))
+;               getters))
+;   (format port ">")))

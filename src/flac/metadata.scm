@@ -75,8 +75,8 @@
     ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table length)))
     ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
     ('picture (add-picture! metadata))
-    ('cuesheet (set-flac-metadata-stream-info! metadata #f))
-    ('application (set-flac-metadata-stream-info! metadata #f))
+    ('cuesheet (set-flac-metadata-cuesheet! metadata #f))
+    ('application (set-flac-metadata-application! metadata #f))
     ('padding (set-flac-metadata-padding! metadata (read-metadata-block-padding length))))
   metadata)
 
