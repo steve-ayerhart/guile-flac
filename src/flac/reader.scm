@@ -13,6 +13,7 @@
             flac-read-coded-number
             flac-read-rice-sint
             with-flac-input-port
+            end-of-flac-stream?
             align-to-byte
             %make-flac-reader
             flac-read/assert-magic
@@ -35,6 +36,9 @@
     (λ ()
       (parameterize ((current-flac-reader (%make-flac-reader (current-input-port) 0 0)))
         (thunk)))))
+
+(define (end-of-flac-stream?)
+  (eof-object? (lookahead-u8 (flac-reader-port (current-flac-reader)))))
 
 (define (flac-read-bits reader bits)
   (while (< (flac-reader-bit-buffer-length reader) bits)

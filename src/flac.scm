@@ -10,7 +10,7 @@
   #:use-module (rnrs bytevectors)
   #:use-module (ice-9 binary-ports)
 
-  #:export (decode-flac-file))
+  #:export (decode-flac-file with-flac-file-decoder))
 
 (define header-struct
   (bs:struct `((filetype ,(bs:string 4 'utf8))
@@ -27,6 +27,30 @@
                (data-chunk-header ,(bs:string 4 'utf8))
                (data-chunk-size ,uint32))))
 
+(define (build-wav-header)
+  (bytestructure
+   header-struct
+   `((filetype "RIFF")
+     (filesize ,(+ 36 (* (stream-info-samples (current-stream-info))
+                         (stream-info-channels (current-stream-info))
+                         (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8))))
+     (filetype-header "WAVE")
+     (format-chunk-marker "fmt ")
+     (format-chunk-length 16)
+     (format-type #x0001)
+     (num-channels ,(stream-info-channels (current-stream-info)))
+     (sample-freq ,(stream-info-sample-rate (current-stream-info)))
+     (bytes/sec ,(* (stream-info-sample-rate (current-stream-info))
+                    (stream-info-channels (current-stream-info))
+                    (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
+     (block-alignment ,(* (stream-info-channels (current-stream-info))
+                          (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
+     (bits-per-sample ,(stream-info-bits-per-sample (current-stream-info)))
+     (data-chunk-header "data")
+     (data-chunk-size ,(* (stream-info-samples (current-stream-info))
+                          (stream-info-channels (current-stream-info))
+                          (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8))))))
+
 (define (write-frame)
   (let* ((total-bytes (floor-quotient (frame-header-bits-per-sample (current-frame-header)) 8))
          (addend (if (= 8 (frame-header-bits-per-sample (current-frame-header))) 128 0))
@@ -37,45 +61,26 @@
                     (bytevector-sint-set! data-bv 0 (+ addend (array-cell-ref (current-frame-samples) channel sample)) (endianness little) total-bytes)
                     (put-bytevector (current-output-port) data-bv))))))
 
+(define (with-flac-file-decoder infile thunk)
+  (with-input-from-file infile
+    (lambda ()
+      (with-flac-input-port
+       (current-input-port)
+       (lambda ()
+         (flac-read/assert-magic)
+         (with-initialized-decoder
+          (flac-metadata-stream-info (read-flac-metadata))
+          thunk))))
+    #:binary #t))
+
 (define (decode-flac-file infile outfile)
   (let ((old-output (current-output-port)))
-    (with-input-from-file infile
-      (λ ()
-        (with-flac-input-port
-         (current-input-port)
-         (λ ()
-           (flac-read/assert-magic)
-           (let ((metadata (read-flac-metadata)))
-             (with-initialized-decoder
-              (flac-metadata-stream-info metadata)
-              (lambda ()
-                (let ((wav-header (bytestructure
-                                   header-struct
-                                    `((filetype "RIFF")
-                                      (filesize ,(+ 36 (* (stream-info-samples (current-stream-info))
-                                                          (stream-info-channels (current-stream-info))
-                                                          (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8))))
-                                      (filetype-header "WAVE")
-                                      (format-chunk-marker "fmt ")
-                                      (format-chunk-length 16)
-                                      (format-type #x0001)
-                                      (num-channels ,(stream-info-channels (current-stream-info)))
-                                      (sample-freq ,(stream-info-sample-rate (current-stream-info)))
-                                      (bytes/sec ,(* (stream-info-sample-rate (current-stream-info))
-                                                     (stream-info-channels (current-stream-info))
-                                                     (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
-                                      (block-alignment ,(* (stream-info-channels (current-stream-info))
-                                                           (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
-                                      (bits-per-sample ,(stream-info-bits-per-sample (current-stream-info)))
-                                      (data-chunk-header "data")
-                                      (data-chunk-size ,(* (stream-info-samples (current-stream-info))
-                                                           (stream-info-channels (current-stream-info))
-                                                           (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))))))
-                  (with-output-to-file outfile
-                    (lambda ()
-                      (put-bytevector (current-output-port) (bytestructure-unwrap wav-header))
-                      (do ((frame-number 0 (1+ frame-number)))
-                          ((>= frame-number (stream-info-samples (current-stream-info))))
-                        (begin
-                          (read-flac-frame)
-                          (write-frame)))))))))))))))
+    (with-flac-file-decoder
+     infile
+     (lambda ()
+       (let ((wav-header (build-wav-header)))
+         (with-output-to-file outfile
+           (lambda ()
+             (put-bytevector (current-output-port) (bytestructure-unwrap wav-header))
+             (while (not (eof-object? (read-flac-frame)))
+               (write-frame)))))))))

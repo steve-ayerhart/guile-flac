@@ -11,6 +11,8 @@
 
   #:use-module (ice-9 match)
   #:use-module (ice-9 receive)
+  #:use-module (ice-9 binary-ports)
+
   #:export (read-flac-frame
             current-stream-info
             current-frame-header
@@ -30,7 +32,7 @@
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-10.1-1
 (define (read/assert-frame-sync-code)
   (unless (= #b111111111111100 (flac-read-uint 15))
-    #f))
+    (error "frame code")))
 
 (define (decode-blocking-strategy raw)
   (enum-lookup flac-frame-blocking-strategy-type raw))
@@ -288,12 +290,17 @@
     (set-current-frame-header-fields!
      blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)))
 
-(define (read-flac-frame)
+(define (read-frame)
   (read-frame-header)
   (read-subframes)
   (stereo-decorrelation (frame-header-channel-assignment (current-frame-header)))
   (align-to-byte)
   (read-frame-footer))
+
+(define (read-flac-frame)
+  (if (end-of-flac-stream?)
+      (eof-object)
+      (read-frame)))
 
 (define (with-initialized-decoder stream-info thunk)
   (let* ((channels (stream-info-channels stream-info))
