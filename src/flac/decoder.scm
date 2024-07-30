@@ -128,29 +128,34 @@
              (array-cell-set!
               (current-frame-samples)
               (+ residual
-                 (bitwise-arithmetic-shift
+                 (bitwise-arithmetic-shift-right
                   (sum-ec (: c (index j) coefficients)
-                          (* (array-cell-ref (current-frame-samples) channel (- (- i 1) j)) c))
+                          (begin
+                            (format #t "c: ~s * ~s\n" c (array-cell-ref (current-frame-samples) channel (- i (- order j))))
+                            (* (array-cell-ref (current-frame-samples) channel (- i (- order j))) c)))
                   shift))
               channel i)))))
 
 (define (read-residual-partitioned-rice channel blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
     (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
-          (escape-param (match coding-method ('rice #xf) ('rice2 #x1f)))
+          (escape-param (match coding-method ('rice #b1111) ('rice2 #b11111)))
           (partitions (bitwise-arithmetic-shift 1 partition-order))
-          (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order)))
-      (do ((partition 0 (1+ partition)))
-          ((>= partition partitions))
-        (let ((rice-parameter (flac-read-uint param-bits)))
-          (if (< rice-parameter escape-param)
-              (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples)))
-                (do-ec (:range i 0 count)
-                       (array-cell-set! (current-frame-samples) (flac-read-rice-sint rice-parameter) channel (1+ i))))
-              (let ((num-bits (flac-read-sint 5)))
-                (do-ec (:range i 0 count)
-                       (array-cell-set! (current-frame-samples) (flac-read-rice-sint num-bits) channel (1+ i))))))))))
-
+          (partition-samples (bitwise-arithmetic-shift-right blocksize partition-order))
+          (current-sample-index predictor-order))
+      (do-ec (:range partition 0 partitions)
+             (let ((count (if (= 0 partition) (- partition-samples predictor-order) partition-samples))
+                   (rice-parameter (flac-read-uint param-bits)))
+               (if (= rice-parameter escape-param)
+                   (let ((num-bits (flac-read-uint 5)))
+                     (do-ec (:range i 0 count)
+                            (begin
+                              (array-cell-set! (current-frame-samples) (flac-read-sint num-bits) channel current-sample-index)
+                              (set! current-sample-index (1+ current-sample-index)))))
+                   (do-ec (:range i 0 count)
+                          (begin
+                            (array-cell-set! (current-frame-samples) (flac-read-rice-sint rice-parameter) channel current-sample-index)
+                            (set! current-sample-index (1+ current-sample-index))))))))))
 
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
@@ -220,7 +225,7 @@
       ('constant (read-subframe-constant channel blocksize sample-depth wasted-bits))
       ('verbatim (read-subframe-verbatim channel blocksize sample-depth wasted-bits))
       ('fixed (read-subframe-fixed channel predictor-order blocksize sample-depth))
-      ('lpc (read-subframe-lpc predictor-order blocksize sample-depth)))))
+      ('lpc (read-subframe-lpc channel predictor-order blocksize sample-depth)))))
 
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.1.1
@@ -237,23 +242,33 @@
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-fixed-predictor-subframe
 (define (read-subframe-fixed channel predictor-order blocksize sample-depth)
-  (let ((frame (frame-header-frame/sample-number (current-frame-header)))
-        (fixed-coefficients '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1))))
+  (let ((fixed-coefficients '(() (1) (2 -1) (3 -3 1) (4 -6 4 -1))))
     ;; warmup
     (do-ec (:range po 0 predictor-order)
-           (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel frame))
+           (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel po))
     ;; residuals
     (read-residual-partitioned-rice channel blocksize predictor-order)
     (restore-linear-prediction channel (list-ref fixed-coefficients predictor-order) predictor-order 0)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-linear-predictor-subframe
-(define (read-subframe-lpc lpc-order blocksize sample-depth)
-  (let* ((warmup (list-ec (: o lpc-order) (flac-read-sint sample-depth)))
-         (precision (+ 1 (flac-read-uint 4)))
+(define (read-subframe-lpc channel lpc-order blocksize sample-depth)
+  (format #t "sd: ~s\n" sample-depth)
+  ;; warmup
+  (do-ec (:range o 0 lpc-order)
+         (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel o))
+
+  (format #t "warmup ~s\n" (current-frame-samples))
+
+  (let* ((precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
-         (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision))))
-         (residual (read-residual-partitioned-rice 0 blocksize lpc-order)))
-    (restore-linear-prediction 99 coefs lpc-order shift)))
+         (coefs (reverse (list-ec (: o lpc-order) (flac-read-sint precision)))))
+
+    ;; residuals
+    (read-residual-partitioned-rice channel blocksize lpc-order)
+    (format #t "residuals ~s\n" (current-frame-samples))
+    (restore-linear-prediction channel coefs lpc-order shift)
+    (format #t "restore ~s\n" (current-frame-samples))
+    ))
 
 (define (read-subframes)
   (let ((channels (stream-info-channels (current-stream-info)))

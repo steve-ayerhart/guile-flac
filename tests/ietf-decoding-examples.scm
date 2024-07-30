@@ -59,23 +59,24 @@
   (define expected-frame-samples
     #2((25588) (10416)))
 
-  (receive (actual-metadata actual-frame-header actual-frame-samples)
-      (with-flac-input-port
-       (open-bytevector-input-port example-1)
-       (λ ()
-         (flac-read/assert-magic)
-         (let ((metadata (read-flac-metadata)))
-           (with-initialized-decoder
-            (flac-metadata-stream-info metadata)
-            (lambda ()
-              (read-flac-frame)
-              (values metadata (current-frame-header) (current-frame-samples))))))
-       (test-group "Metadata"
-         (test-equal "stream info"
-           expected-stream-info (flac-metadata-stream-info actual-metadata)))
-       (test-group "Frame"
-         (test-equal "first frame header" expected-frame-header actual-frame-header)
-         (test-equal "first frame samples" expected-frame-samples actual-frame-header)))))
+  (with-flac-input-port
+   (open-bytevector-input-port example-1)
+   (λ ()
+     (flac-read/assert-magic)
+     (let ((metadata (read-flac-metadata)))
+       (with-initialized-decoder
+        (flac-metadata-stream-info metadata)
+        (lambda ()
+
+          (test-group "Metadata"
+            (test-equal "stream info"
+              expected-stream-info (flac-metadata-stream-info actual-metadata)))
+
+          (read-flac-frame)
+
+          (test-group "Frame"
+            (test-equal "Header" (current-frame-header) actual-frame-header)
+            (test-equal "Samples" (current-frame-samples) actual-frame-samples))))))))
 
 (test-group "Example 2"
   (define example-2
@@ -183,27 +184,32 @@
      4096 4096 31 31 32000 1 8 24
      #vu8(248 249 227 150 245 203 207 198 220 128 127 153 119 144 107 50)))
 
-  (define expected-first-frame
-    (%make-frame
-     (%make-frame-header 'fixed 24 32000 'independent 8 0 233)
-     22435
-     '((0 79 111 78 8 -61 -90 -68 -13 42 67 53 13 -27 -46 -38 -12 14 24 19 6 -4 -5 0))))
+  (define expected-first-frame-header
+    (%make-frame-header 'fixed 24 32000 'independent 8 0 233))
 
-  (receive (actual-metadata actual-first-frame)
-      (with-flac-input-port
-       (open-bytevector-input-port example-3)
-       (λ ()
-         (flac-read/assert-magic)
-         (let ((metadata (read-flac-metadata)))
-           (parameterize ((current-stream-info (flac-metadata-stream-info metadata)))
-             (values metadata (read-flac-frame))))))
-    (test-group "Metadata"
-      (test-equal "stream info"
-        expected-stream-info
-        (flac-metadata-stream-info actual-metadata)))
+  (define expted-first-frame-footer
+    (%make-frame-footer 22435))
 
-    (test-group "Frames"
-      (test-equal "frame 1" expected-first-frame expected-first-frame))))
+  (define expected-first-frame-samples
+    #1((0 79 111 78 8 -61 -90 -68 -13 42 67 53 13 -27 -46 -38 -12 14 24 19 6 -4 -5 0)))
+
+  (with-flac-input-port
+   (open-bytevector-input-port example-3)
+   (λ ()
+     (flac-read/assert-magic)
+     (let ((metadata (read-flac-metadata)))
+       (with-initialized-decoder
+        (flac-metadata-stream-info metadata)
+        (lambda ()
+
+          (test-group "Metadata"
+            (test-equal "stream info" expected-stream-info (flac-metadata-stream-info actual-metadata)))
+
+          (test-group "Frames"
+
+            (read-flac-frame)
+
+            (test-equal "Frame 1" expected-first-frame expected-first-frame))))))))
 
 
 (define exit-status (test-runner-fail-count (test-runner-current)))
