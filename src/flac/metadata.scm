@@ -2,7 +2,6 @@
   #:use-module (flac format)
   #:use-module (flac reader)
 
-  #:use-module (bytestructures guile)
   #:use-module (ice-9 match)
   #:use-module (ice-9 optargs)
   #:use-module (ice-9 receive)

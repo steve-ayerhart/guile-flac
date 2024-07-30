@@ -129,13 +129,12 @@
               (current-frame-samples)
               (+ residual
                  (bitwise-arithmetic-shift-right
-                  (sum-ec (: c (index j) coefficients)
-                          (begin
-                            (format #t "c: ~s * ~s\n" c (array-cell-ref (current-frame-samples) channel (- i (- order j))))
-                            (* (array-cell-ref (current-frame-samples) channel (- i (- order j))) c)))
+                  (sum-ec (: c (index j) coefficients) (* (array-cell-ref (current-frame-samples) channel (- i (- order j))) c))
                   shift))
               channel i)))))
 
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
+;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#coded-residual
 (define (read-residual-partitioned-rice channel blocksize predictor-order)
   (let-values (((coding-method partition-order) (read-entropy-coding-method-info)))
     (let ((param-bits (match coding-method ('rice 4) ('rice2 5) (_ #f)))
@@ -156,9 +155,6 @@
                           (begin
                             (array-cell-set! (current-frame-samples) (flac-read-rice-sint rice-parameter) channel current-sample-index)
                             (set! current-sample-index (1+ current-sample-index))))))))))
-
-
-;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 
 ;;; 000000 constant
 ;;; 000001 verbatim
@@ -212,7 +208,6 @@
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-subframes
 (define (read-subframe channel)
   (read-subframe-header)
-  (format #t "subframe header: ~s\n" (current-subframe-header))
   (let* ((wasted-bits (subframe-header-wasted-bits (current-subframe-header)))
          (predictor-order (subframe-header-predictor-order (current-subframe-header)))
          (sample-depth (calculate-sample-depth
@@ -252,12 +247,9 @@
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-linear-predictor-subframe
 (define (read-subframe-lpc channel lpc-order blocksize sample-depth)
-  (format #t "sd: ~s\n" sample-depth)
   ;; warmup
   (do-ec (:range o 0 lpc-order)
          (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel o))
-
-  (format #t "warmup ~s\n" (current-frame-samples))
 
   (let* ((precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
@@ -265,10 +257,7 @@
 
     ;; residuals
     (read-residual-partitioned-rice channel blocksize lpc-order)
-    (format #t "residuals ~s\n" (current-frame-samples))
-    (restore-linear-prediction channel coefs lpc-order shift)
-    (format #t "restore ~s\n" (current-frame-samples))
-    ))
+    (restore-linear-prediction channel coefs lpc-order shift)))
 
 (define (read-subframes)
   (let ((channels (stream-info-channels (current-stream-info)))
@@ -308,17 +297,15 @@
 
 (define (read-flac-frame)
   (read-frame-header)
-  (let ((channel-assignment (frame-header-channel-assignment (current-frame-header))))
-    (format #t "frame header ~s\n" (current-frame-header))
-    (read-subframes)
-    (stereo-decorrelation channel-assignment)
-    (align-to-byte)
-    (read-frame-footer)))
+  (read-subframes)
+  (stereo-decorrelation (frame-header-channel-assignment (current-frame-header)))
+  (align-to-byte)
+  (read-frame-footer))
 
 (define (with-initialized-decoder stream-info thunk)
   (let* ((channels (stream-info-channels stream-info))
-         (samples (stream-info-max-block-size stream-info))
-         (channels-array (make-array 0 channels samples)))
+         (max-block-samples (stream-info-max-block-size stream-info))
+         (channels-array (make-array 0 channels max-block-samples)))
 
     (parameterize ((current-stream-info stream-info)
                    (current-frame-header (%make-frame-header #f #f #f #f #f #f #f))
