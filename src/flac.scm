@@ -49,11 +49,8 @@
              (with-initialized-decoder
               (flac-metadata-stream-info metadata)
               (lambda ()
-                (let* ((sample-data-length (* (stream-info-samples (current-stream-info))
-                                              (stream-info-channels (current-stream-info))
-                                              (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
-                       (wav-header (bytestructure
-                                    header-struct
+                (let ((wav-header (bytestructure
+                                   header-struct
                                     `((filetype "RIFF")
                                       (filesize ,(+ 36 (* (stream-info-samples (current-stream-info))
                                                           (stream-info-channels (current-stream-info))

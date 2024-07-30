@@ -172,12 +172,6 @@
      ((between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc))
      (else (values #f #f)))))
 
-(define (left-stereo-decorrelation l r)
-  (array-set! l (- (array-ref l) (array-ref r))))
-(define (right-stereo-decorrelation l r)
-  (array-cell-set! (current-frame-samples) (+ (array-ref l) (array-ref r)) 0))
-                                        ;  (array-set! r (+ (array-ref l) (array-ref r))))
-
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation channel-assignment)
   (let ((blocksize (frame-header-blocksize (current-frame-header))))
@@ -227,7 +221,6 @@
 (define (read-subframe-verbatim channel blocksize sample-depth wasted-bits)
   (do-ec (:range block 0 blocksize)
          (array-cell-set! (current-frame-samples) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits) channel block)))
-                                        ;  (list-ec (: b blocksize) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.2.1
 (define (read-subframe-constant channel blocksize sample-depth wasted-bits)
