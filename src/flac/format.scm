@@ -31,9 +31,6 @@
             frame-footer-crc
             set-frame-footer-crc!
 
-            %make-frame
-            frame-header frame-subframes frame-footer frame-samples
-
             %make-metadata-padding metadata-padding?
             padding-length
 
@@ -113,14 +110,6 @@
   frame-footer?
   (crc frame-footer-crc set-frame-footer-crc!))
 
-(define-record-type <frame>
-  (%make-frame header footer samples)
-  frame?
-  (header frame-header)
-  (footer frame-footer)
-  (samples frame-samples))
-
-                                        ; metadata
 (define flac-metadata-type
   (make-enumeration '(stream-info
                       padding
@@ -250,11 +239,6 @@
  (λ (record port)
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
 
-                                        ; (set-record-type-printer!
-                                        ;  <frame>
-                                        ;  (λ (record port)
-                                        ;    (format port "#<<frame> header: ~a>" (frame-header record))))
-
 (define-record-type <flac-metadata>
   (%make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
   flac-metadata?
@@ -266,13 +250,20 @@
   (cuesheet flac-metadata-cuesheet set-flac-metadata-cuesheet!)
   (pictures flac-metadata-pictures set-flac-metadata-pictures!))
 
-;(set-record-type-printer!
-; <flac-metadata>
-; (λ (record port)
-;   (format port "#<<flac-metadata>")
-;   (let ((getters '(flac-metadata-stream-info flac-metadata-vorbis-comment flac-metadata-application flac-metadata-cuesheet flac-metadata-pictures flac-metadata-seek-table flac-metadata-padding)))
-;     (for-each (λ (getter)
-;                 (when ((primitive-eval getter) record)
-;                   (regexp-substitute/global port "flac-metadata-" (symbol->string getter) 'pre " " 'post)))
-;               getters))
-;   (format port ">")))
+(set-record-type-printer!
+ <flac-metadata>
+ (λ (record port)
+   (format port "#<<flac-metadata>")
+   (for-each (lambda (getter)
+               (when (getter record)
+                 (regexp-substitute port (string-match "%flac-metadata-(.*?)-procedure$" (symbol->string (procedure-name getter))) " " 'pre 1 'post)))
+             (list
+              flac-metadata-stream-info
+              flac-metadata-padding
+              flac-metadata-application
+              flac-metadata-seek-table
+              flac-metadata-seek-table
+              flac-metadata-vorbis-comment
+              flac-metadata-cuesheet
+              flac-metadata-pictures))
+   (format port ">")))

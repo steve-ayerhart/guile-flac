@@ -90,17 +90,20 @@
 
 ;;; FIXME: bail early if not in type
 (define (read-flac-metadata-type type)
-  (let metadata-loop ()
+  (let metadata-loop ((metadata (%make-flac-metadata #f #f #f #f #f #f #f)))
     (receive (last-block? block-type block-length)
         (read-metadata-block-header)
       (if (or last-block? (equal? type block-type))
           (match type
-            ('stream-info (read-metadata-block-stream-info))
-            ('vorbis-comment (read-metadata-block-vorbis-comment))
+            ('stream-info (set-flac-metadata-stream-info! metadata (read-metadata-block-stream-info)))
+            ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
+            ('picture (set-flac-metadata-pictures! metadata (read-metadata-block-picture)))
+            ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table)))
+            ('cuesheet (set-flac-metadata-cuesheet! metadata #f))
             (_ #f))
           (begin
             (flac-read-bytes block-length)
-            (metadata-loop))))))
+            (metadata-loop metadata))))))
 
 (define* (flac-metadata port #:optional (type #f))
   (with-flac-input-port
