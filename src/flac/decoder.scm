@@ -19,6 +19,7 @@
             current-subframe-header
             current-frame-samples
             current-frame-footer
+            log-port
             with-initialized-decoder))
 
 ;; we try to avoid gc so we define some parameters to mutate/reuse objects
@@ -27,6 +28,7 @@
 (define current-stream-info (make-parameter #f))
 (define current-frame-samples (make-parameter #f))
 (define current-frame-footer (make-parameter #f))
+(define log-port (make-parameter #f))
 
 ;;; TODO: recover from bad frame
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-10.1-1
@@ -44,10 +46,10 @@
   (enum-lookup
    flac-channel-assignment-type
    (cond
-    ((between? raw #b0000 #b0111) 0)
-    ((= raw #b1000) 1)
-    ((= raw #b1001) 2)
-    ((= raw #b1010) 3)
+    ((between? raw #b0000 #b0111) 0) ; independent
+    ((= raw #b1000) 1) ; left
+    ((= raw #b1001) 2) ; right
+    ((= raw #b1010) 3) ; mid
     (else #f))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-block-size-bits
@@ -56,29 +58,30 @@
    ((= raw #b0000) 'reserved)
    ((= raw #b0001) 192)
    ((between? raw #b0010 #b0101) (* 576 (expt 2 (- raw 2))))
-   ((= raw #b0110) (+ 1 (flac-read-uint 8)))
-   ((= raw #b0111) (+ 1 (flac-read-uint 16)))
+   ((= raw #b0110) (1+ (flac-read-uint 8)))
+   ((= raw #b0111) (1+ (flac-read-uint 16)))
    ((between? raw #b1000 #b1111) (* 256 (expt 2 (- raw 8))))))
+
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-sample-rate-bits
 (define (decode-sample-rate raw)
-  (case raw
-    ((#b0000) (stream-info-sample-rate (current-stream-info)))
-    ((#b0001) 88200)
-    ((#b0010) 17640)
-    ((#b0011) 19200)
-    ((#b0100)  8000)
-    ((#b0101) 16000)
-    ((#b0110) 22050)
-    ((#b0111) 24000)
-    ((#b1000) 32000)
-    ((#b1001) 44100)
-    ((#b1010) 48000)
-    ((#b1011) 96000)
-    ((#b1100) (* 1000 (flac-read-uint 8)) ; sample rate in kHz
-     ((#b1101) (flac-read-uint 16)) ; sample rate in Hz
-     ((#b1110) (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
-     ((#b1111) 'invalid))))
+  (match raw
+    (#b0000 (stream-info-sample-rate (current-stream-info)))
+    (#b0001 88200)
+    (#b0010 17640)
+    (#b0011 19200)
+    (#b0100  8000)
+    (#b0101 16000)
+    (#b0110 22050)
+    (#b0111 24000)
+    (#b1000 32000)
+    (#b1001 44100)
+    (#b1010 48000)
+    (#b1011 96000)
+    (#b1100 (* 1000 (flac-read-uint 8))) ; sample rate in kHz
+    (#b1101 (flac-read-uint 16)) ; sample rate in Hz
+    (#b1110 (* 10 (flac-read-uint 16))) ; sample rate in tens of Hz
+    (#b1111 'invalid)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-number
 (define (flac-read-coded-number)
@@ -90,15 +93,15 @@
           (coded-number-loop (bitwise-and (bitwise-arithmetic-shift coded-sample-number 1) #xff))))))
 
 (define (decode-bits-per-sample raw)
-  (case raw
-    ((#b000) (stream-info-bits-per-sample (current-stream-info)))
-    ((#b001) 8)
-    ((#b010) 12)
-    ((#b011) 'reserved)
-    ((#b100) 16)
-    ((#b101) 20)
-    ((#b110) 24)
-    ((#b111) 'reserved)))
+  (match raw
+    (#b000 (stream-info-bits-per-sample (current-stream-info)))
+    (#b001 8)
+    (#b010 12)
+    (#b011 'reserved)
+    (#b100 16)
+    (#b101 20)
+    (#b110 24)
+    (#b111 'reserved)))
 
 (define (read/assert-subframe-sync)
   (when (= 1 (flac-read-uint 1))
@@ -178,10 +181,10 @@
 (define (stereo-decorrelation channel-assignment)
   (let ((blocksize (frame-header-blocksize (current-frame-header))))
     (match channel-assignment
-      ('independent #t)
+      ('independent #t) ; do nothing
       ('left
        (do-ec (:range b 0 blocksize)
-              (array-cell-set! (current-frame-samples) (- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
+              (array-cell-set! (current-frame-samples)(- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
       ('right
        (do-ec (:range b 0 blocksize)
               (array-cell-set! (current-frame-samples) (+ (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 0 b)))
@@ -259,7 +262,9 @@
         (channel-assignment (frame-header-channel-assignment (current-frame-header))))
     (do ((channel 0 (1+ channel)))
         ((>= channel channels))
-      (read-subframe channel))))
+      (begin
+        (read-subframe channel)
+        (when (log-port) (format (log-port) "~s\n" (current-subframe-header)))))))
 
 ;;; TODO: actually verify the checksum
 (define (read-frame-footer)
@@ -292,6 +297,7 @@
 
 (define (read-frame)
   (read-frame-header)
+  (when (log-port) (format (log-port) "~s\n" (current-frame-header)))
   (read-subframes)
   (stereo-decorrelation (frame-header-channel-assignment (current-frame-header)))
   (align-to-byte)

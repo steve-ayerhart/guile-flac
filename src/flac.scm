@@ -10,7 +10,12 @@
   #:use-module (rnrs bytevectors)
   #:use-module (ice-9 binary-ports)
 
-  #:export (decode-flac-file with-flac-file-decoder))
+  #:use-module (gcrypt hash)
+
+  #:export (decode-flac-file
+            with-flac-file-decoder
+            flac-file-decode-logger
+            flac-file-frame-logger))
 
 (define header-struct
   (bs:struct `((filetype ,(bs:string 4 'utf8))
@@ -72,6 +77,33 @@
           (flac-metadata-stream-info (read-flac-metadata))
           thunk))))
     #:binary #t))
+
+(define (flac-file-frame-logger infile count)
+  (parameterize ((log-port (current-output-port)))
+    (with-flac-file-decoder
+     infile
+     (lambda ()
+       (format #t "~s\n" (current-stream-info))
+       (do-ec (:range frame 0 count) (read-flac-frame))))))
+
+(define (flac-file-decode-logger infile)
+  (with-flac-file-decoder
+   infile
+   (lambda ()
+     (format #t "~s\n" (current-stream-info))
+     (let frame-loop ((frame-number 0)
+                      (frame (read-flac-frame)))
+       (if (eof-object? frame)
+           #t
+           (let* ((channels (stream-info-channels (current-stream-info)))
+                  (blocksize (frame-header-blocksize (current-frame-header)))
+                  (sample-bytes (floor-quotient (frame-header-bits-per-sample (current-frame-header)) 8))
+                  (samples (list-ec (:range sample 0 blocksize)
+                                    (:range channel 0 channels)
+                                    (array-cell-ref (current-frame-samples) channel sample)))
+                  (thing (sint-list->bytevector samples (endianness little) sample-bytes))
+                  (frame-md5 (bytevector-hash (sint-list->bytevector samples (endianness little) sample-bytes) (hash-algorithm md5))))
+             thing))))))
 
 (define (decode-flac-file infile outfile)
   (let ((old-output (current-output-port)))
