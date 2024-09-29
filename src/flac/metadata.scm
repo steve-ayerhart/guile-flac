@@ -5,9 +5,12 @@
   #:use-module (ice-9 match)
   #:use-module (ice-9 optargs)
   #:use-module (ice-9 receive)
+
   #:use-module (rnrs enums)
   #:use-module (rnrs bytevectors)
+
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-42)
 
   #:export (read-flac-metadata flac-metadata flac-file-metadata))
 
@@ -29,24 +32,26 @@
    (flac-read-uint 36)
    (flac-read-bytes 16)))
 
-(define (read-metadata-block-seek-table length)
+(define (read-metadata-block-seek-table block-length)
   (%make-metadata-seek-table
-   (map (λ (_)
-          (%make-metadata-seek-point
-           (flac-read-uint 64)
-           (flac-read-uint 64)
-           (flac-read-uint 16)))
-        (iota (/ length 18)))))
+   (list-ec
+    (: _ (/ block-length 18))
+    (%make-metadata-seek-point
+     (flac-read-uint 64)
+     (flac-read-uint 64)
+     (flac-read-uint 16)))))
 
 (define (read-metadata-block-vorbis-comment)
   (define (read-native-u32) (bytevector-u32-native-ref (flac-read-bytes 4) 0))
   (%make-metadata-vorbis-comment
    (utf8->string (flac-read-bytes (read-native-u32)))
-   (map (λ (_) (string-split (utf8->string (flac-read-bytes (read-native-u32))) #\=)) (iota (read-native-u32)))))
+   (list-ec
+    (: _ (read-native-u32))
+    (string-split (utf8->string (flac-read-bytes (read-native-u32))) #\=))))
 
-(define (read-metadata-block-padding length)
-  (flac-read-bytes length)
-  (%make-metadata-padding length))
+(define (read-metadata-block-padding block-length)
+  (flac-read-bytes block-length)
+  (%make-metadata-padding block-length))
 
 (define (read-metadata-block-picture)
   (%make-metadata-picture
@@ -98,7 +103,7 @@
             ('stream-info (set-flac-metadata-stream-info! metadata (read-metadata-block-stream-info)))
             ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
             ('picture (set-flac-metadata-pictures! metadata (read-metadata-block-picture)))
-            ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table)))
+            ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table block-length)))
             ('cuesheet (set-flac-metadata-cuesheet! metadata #f))
             (_ #f))
           (begin
