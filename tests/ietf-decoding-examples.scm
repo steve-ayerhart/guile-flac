@@ -31,6 +31,7 @@
 
              (ice-9 binary-ports)
              (ice-9 receive)
+             (ice-9 format)
 
              (srfi srfi-64))
 
@@ -150,11 +151,11 @@
             (test-equal "stream info"
               (flac-metadata-stream-info metadata) expected-stream-info)
             (test-equal "vorbis comment"
-              (flac-metadata-vorbis-comment metadata) expected-vorbis-comment)
+              (find-metadata metadata 'vorbis-comment) expected-vorbis-comment)
             (test-equal "padding"
-              (flac-metadata-padding metadata) expected-padding)
+              (find-metadata metadata 'padding) expected-padding)
             (test-equal "seek table"
-              (flac-metadata-seek-table metadata) expected-seek-table))
+              (find-metadata metadata 'seek-table) expected-seek-table))
 
           (test-group "Frames"
 
