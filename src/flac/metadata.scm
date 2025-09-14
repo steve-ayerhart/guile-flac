@@ -12,7 +12,7 @@
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-42)
 
-  #:export (read-flac-metadata flac-metadata flac-file-metadata))
+  #:export (read-flac-metadata flac-file-metadata filter-metadata find-metadata))
 
 (define-public (read-metadata-block-header)
   (values
@@ -64,63 +64,51 @@
    (flac-read-uint 32)
    (flac-read-bytes (flac-read-uint 32))))
 
-(define (add-picture! metadata)
-  (if (flac-metadata-pictures metadata)
-      (set-flac-metadata-pictures!
-       metadata
-       (cons (read-metadata-block-picture)
-             (flac-metadata-pictures metadata)))
-      (set-flac-metadata-pictures!
-       metadata
-       (list (read-metadata-block-picture)))))
+(define (read-metadata-block block-type block-length)
+  (match block-type
+    ('stream-info (read-metadata-block-stream-info))
+    ('seek-table (read-metadata-block-seek-table block-length))
+    ('vorbis-comment (read-metadata-block-vorbis-comment))
+    ('picture (read-metadata-block-picture))
+    ('cuesheet (flac-read-bytes block-length))
+    ('application (flac-read-bytes block-length))
+    ('padding (read-metadata-block-padding block-length))
+    ('skip (begin (flac-read-bytes block-length) #f))))
 
-(define (read-metadata-block metadata length type)
-  (match type
-    ('stream-info (set-flac-metadata-stream-info! metadata (read-metadata-block-stream-info)))
-    ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table length)))
-    ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
-    ('picture (add-picture! metadata))
-    ('cuesheet (set-flac-metadata-cuesheet! metadata #f))
-    ('application (set-flac-metadata-application! metadata #f))
-    ('padding (set-flac-metadata-padding! metadata (read-metadata-block-padding length))))
-  metadata)
+(define (resolve-block-type search-type block-type)
+  (if (symbol? search-type)
+      (if (equal? search-type block-type) block-type 'skip)
+      block-type))
 
-(define (read-flac-metadata)
-  (let metadata-loop ((metadata (%make-flac-metadata #f #f #f #f #f #f #f)))
+(define* (read-flac-metadata #:optional (search-type #f))
+  (let metadata-loop ((flac-metadata %empty-flac-metadata))
     (receive (last-block? block-type block-length)
         (read-metadata-block-header)
       (if last-block?
-          (read-metadata-block metadata block-length block-type)
-          (metadata-loop (read-metadata-block metadata block-length block-type))))))
+          (add-metadata
+           flac-metadata
+           (read-metadata-block (resolve-block-type search-type block-type) block-length))
+          (metadata-loop
+           (add-metadata flac-metadata (read-metadata-block (resolve-block-type search-type block-type) block-length)))))))
 
-;;; FIXME: bail early if not in type
-(define (read-flac-metadata-type type)
-  (let metadata-loop ((metadata (%make-flac-metadata #f #f #f #f #f #f #f)))
-    (receive (last-block? block-type block-length)
-        (read-metadata-block-header)
-      (if (or last-block? (equal? type block-type))
-          (match type
-            ('stream-info (set-flac-metadata-stream-info! metadata (read-metadata-block-stream-info)))
-            ('vorbis-comment (set-flac-metadata-vorbis-comment! metadata (read-metadata-block-vorbis-comment)))
-            ('picture (set-flac-metadata-pictures! metadata (read-metadata-block-picture)))
-            ('seek-table (set-flac-metadata-seek-table! metadata (read-metadata-block-seek-table block-length)))
-            ('cuesheet (set-flac-metadata-cuesheet! metadata #f))
-            (_ #f))
-          (begin
-            (flac-read-bytes block-length)
-            (metadata-loop metadata))))))
-
-(define* (flac-metadata port #:optional (type #f))
-  (with-flac-input-port
-   port
-   (λ ()
-     (if (symbol? type)
-         (read-flac-metadata-type type)
-         (read-flac-metadata)))))
-
-(define* (flac-file-metadata filename #:optional (type #f))
+(define* (flac-file-metadata filename #:optional (search-type #f))
   (with-flac-input-port
    (open-input-file filename #:binary #t)
    (λ ()
      (flac-read/assert-magic)
-     (flac-metadata (current-input-port) type))))
+     (read-flac-metadata search-type))))
+
+(define  (predicate-lookup symbol)
+  (match symbol
+    ('picture metadata-picture?)
+    ('seek-table metadata-seek-table?)
+    ('padding metadata-padding?)
+    ('vorbis-comment metadata-vorbis-comment?)
+    ('cuesheet metadata-cuesheet?)
+    (_ #f)))
+
+(define (filter-metadata flac-metadata filter-type)
+  (filter (predicate-lookup filter-type) (flac-metadata-metadata flac-metadata)))
+
+(define (find-metadata flac-metadata search-type)
+  (find (predicate-lookup search-type) (flac-metadata-metadata flac-metadata)))

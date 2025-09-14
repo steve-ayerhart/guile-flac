@@ -1,6 +1,7 @@
 (define-module (flac decoder)
   #:use-module (flac reader)
   #:use-module (flac format)
+  #:use-module (flac metadata)
 
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-9 gnu)
@@ -20,6 +21,7 @@
             current-frame-samples
             current-frame-footer
             log-port
+            with-flac-file-decoder
             with-initialized-decoder))
 
 ;; we try to avoid gc so we define some parameters to mutate/reuse objects
@@ -177,23 +179,29 @@
      ((between? raw #b100000 #b111111) (values (+ 1 (bit-extract raw 0 5)) 'lpc))
      (else (values #f #f)))))
 
+(define (stereo-decorrelate-left blocksize)
+  (do-ec (:range b 0 blocksize)
+         (array-cell-set! (current-frame-samples)(- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
+
+(define (stereo-decorrelate-right blocksize)
+  (do-ec (:range b 0 blocksize)
+         (array-cell-set! (current-frame-samples) (+ (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 0 b)))
+
+(define (stereo-decorrelate-mid blocksize)
+  (do-ec (:range b 0 blocksize)
+         (let* ((side (array-cell-ref (current-frame-samples) 1 b))
+                (right (- (array-cell-ref (current-frame-samples) 0 b) (bitwise-arithmetic-shift-right side 1))))
+           (array-cell-set! (current-frame-samples) right 1 b)
+           (array-cell-set! (current-frame-samples) (+ right side) 0 b))))
+
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation channel-assignment)
   (let ((blocksize (frame-header-blocksize (current-frame-header))))
     (match channel-assignment
       ('independent #t) ; do nothing
-      ('left
-       (do-ec (:range b 0 blocksize)
-              (array-cell-set! (current-frame-samples)(- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
-      ('right
-       (do-ec (:range b 0 blocksize)
-              (array-cell-set! (current-frame-samples) (+ (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 0 b)))
-      ('mid
-       (do-ec (:range b 0 blocksize)
-              (let* ((side (array-cell-ref (current-frame-samples) 1 b))
-                     (right (- (array-cell-ref (current-frame-samples) 0 b) (bitwise-arithmetic-shift-right side 1))))
-                (array-cell-set! (current-frame-samples) right 1 b)
-                (array-cell-set! (current-frame-samples) (+ right side) 0 b)))))))
+      ('left (stereo-decorrelate-left blocksize))
+      ('right (stereo-decorrelate-right blocksize))
+      ('mid (stereo-decorrelate-mid blocksize)))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-subframe-header
 (define (read-subframe-header)
@@ -319,3 +327,15 @@
                    (current-frame-footer (%make-frame-footer #f))
                    (current-frame-samples channels-array))
       (thunk))))
+
+(define (with-flac-file-decoder infile thunk)
+  (with-input-from-file infile
+    (lambda ()
+      (with-flac-input-port
+       (current-input-port)
+       (lambda ()
+         (flac-read/assert-magic)
+         (with-initialized-decoder
+          (flac-metadata-stream-info (read-flac-metadata))
+          thunk))))
+    #:binary #t))

@@ -34,6 +34,10 @@
             %make-metadata-padding metadata-padding?
             padding-length
 
+            metadata-cuesheet?
+
+            metadata-application?
+
             %make-metadata-stream-info metadata-stream-info?
             stream-info-min-block-size stream-info-max-block-size
             stream-info-min-frame-size stream-info-max-frame-size
@@ -41,22 +45,23 @@
             stream-info-bits-per-sample stream-info-samples stream-info-md5
 
             %make-metadata-vorbis-comment
+            metadata-vorbis-comment?
             vorbis-comment-vendor
             vorbis-comment-comments
 
             %make-flac-metadata
+            %empty-flac-metadata
+            add-metadata
             flac-metadata-stream-info set-flac-metadata-stream-info!
-            flac-metadata-seek-table set-flac-metadata-seek-table!
-            flac-metadata-vorbis-comment set-flac-metadata-vorbis-comment!
-            flac-metadata-padding set-flac-metadata-padding!
-            flac-metadata-pictures set-flac-metadata-pictures!
-            flac-metadata-application set-flac-metadata-application!
-            flac-metadata-cuesheet set-flac-metadata-cuesheet!
+            flac-metadata-metadata set-flac-metadata-metadata!
+
 
             %make-metadata-picture
+            metadata-picture?
             flac-picture-type
 
             %make-metadata-seek-table
+            metadata-seek-table?
             %make-metadata-seek-point
 
             flac-metadata-type flac-metadata-type-index))
@@ -142,6 +147,11 @@
   (%make-metadata-seek-table seek-points)
   metadata-seek-table?
   (seek-points seek-table-seek-points))
+
+(set-record-type-printer!
+ <seek-table>
+ (λ (record port)
+   (format port "#<<seek-table> seek-points: ~a>" (length (seek-table-seek-points record)))))
 
 (define-record-type <seek-point>
   (%make-metadata-seek-point sample-number offset total-samples)
@@ -240,30 +250,19 @@
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
 
 (define-record-type <flac-metadata>
-  (%make-flac-metadata stream-info padding application seek-table vorbis-comment cuesheet pictures)
+  (%make-flac-metadata stream-info metadata)
   flac-metadata?
   (stream-info flac-metadata-stream-info set-flac-metadata-stream-info!)
-  (padding flac-metadata-padding set-flac-metadata-padding!)
-  (application flac-metadata-application set-flac-metadata-application!)
-  (seek-table flac-metadata-seek-table set-flac-metadata-seek-table!)
-  (vorbis-comment flac-metadata-vorbis-comment set-flac-metadata-vorbis-comment!)
-  (cuesheet flac-metadata-cuesheet set-flac-metadata-cuesheet!)
-  (pictures flac-metadata-pictures set-flac-metadata-pictures!))
+  (metadata flac-metadata-metadata set-flac-metadata-metadata!))
 
-(set-record-type-printer!
- <flac-metadata>
- (λ (record port)
-   (format port "#<<flac-metadata>")
-   (for-each (lambda (getter)
-               (when (getter record)
-                 (regexp-substitute port (string-match "%flac-metadata-(.*?)-procedure$" (symbol->string (procedure-name getter))) " " 'pre 1 'post)))
-             (list
-              flac-metadata-stream-info
-              flac-metadata-padding
-              flac-metadata-application
-              flac-metadata-seek-table
-              flac-metadata-seek-table
-              flac-metadata-vorbis-comment
-              flac-metadata-cuesheet
-              flac-metadata-pictures))
-   (format port ">")))
+(define %empty-flac-metadata
+  (%make-flac-metadata #f '()))
+
+(define (add-metadata flac-metadata metadata)
+  (when metadata
+    (if (metadata-stream-info? metadata)
+        (set-flac-metadata-stream-info! flac-metadata metadata)
+        (if (list? (flac-metadata-metadata flac-metadata))
+            (set-flac-metadata-metadata! flac-metadata (cons metadata (flac-metadata-metadata flac-metadata)))
+            (set-flac-metadata-metadata! flac-metadata (list metadata)))))
+  flac-metadata)

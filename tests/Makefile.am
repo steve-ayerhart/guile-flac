@@ -1,5 +1,6 @@
 SCM_TESTS = \
-	ietf-decoding-examples.scm
+	ietf-decoding-examples.scm \
+	subset-tests.scm
 
 TESTS = ${SCM_TESTS}
 

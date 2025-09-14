@@ -13,6 +13,7 @@
             flac-read-coded-number
             flac-read-rice-sint
             with-flac-input-port
+            with-flac-input-file
             end-of-flac-stream?
             align-to-byte
             %make-flac-reader
@@ -33,6 +34,12 @@
 
 (define (with-flac-input-port port thunk)
   (with-input-from-port port
+    (λ ()
+      (parameterize ((current-flac-reader (%make-flac-reader (current-input-port) 0 0)))
+        (thunk)))))
+
+(define (with-flac-input-file filename thunk)
+  (with-input-from-file filename
     (λ ()
       (parameterize ((current-flac-reader (%make-flac-reader (current-input-port) 0 0)))
         (thunk)))))
