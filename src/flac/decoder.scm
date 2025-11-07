@@ -181,7 +181,7 @@
 
 (define (stereo-decorrelate-left blocksize)
   (do-ec (:range b 0 blocksize)
-         (array-cell-set! (current-frame-samples)(- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
+         (array-cell-set! (current-frame-samples) (- (array-cell-ref (current-frame-samples) 0 b) (array-cell-ref (current-frame-samples) 1 b)) 1 b)))
 
 (define (stereo-decorrelate-right blocksize)
   (do-ec (:range b 0 blocksize)
@@ -256,6 +256,8 @@
   ;; warmup
   (do-ec (:range o 0 lpc-order)
          (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel o))
+
+  (when (log-port) (format (log-port) "lpc warm up samples: ~s\n" (array-cell-ref (current-frame-samples) channel)))
 
   (let* ((precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
