@@ -78,7 +78,6 @@ Examples:
                     (string-append filename ":")
                     "")))
 
-    ;; STREAMINFO fields
     (when stream-info
       (when (assoc-ref options 'show-md5sum)
         (format #t "~a~a~%" prefix (format-md5 (stream-info-md5 stream-info))))
@@ -99,7 +98,6 @@ Examples:
       (when (assoc-ref options 'show-total-samples)
         (format #t "~a~a~%" prefix (stream-info-samples stream-info))))
 
-    ;; VORBIS_COMMENT fields
     (when vorbis-comment
       (when (assoc-ref options 'show-vendor-tag)
         (format #t "~a~a~%" prefix (vorbis-comment-vendor vorbis-comment)))
@@ -225,10 +223,9 @@ Examples:
       (exit 1))
 
      (else
-      ;; Auto-enable --with-filename if multiple files
+      ;; auto-enable --with-filename if multiple files
       (when (and (> (length files) 1)
                  (not (option-ref options 'no-filename #f)))
         (set! options (assoc-set! options 'with-filename #t)))
 
-      ;; Process each file
       (for-each (lambda (file) (process-file file options)) files)))))

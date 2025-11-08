@@ -67,35 +67,52 @@
     uint))
 
 (define (align-to-byte)
-  (let ((bit-buffer-length (flac-reader-bit-buffer-length (current-flac-reader))))
-    (set-flac-reader-bit-buffer-length! (current-flac-reader) (- bit-buffer-length (modulo bit-buffer-length 8)))))
+  "Discard bits from the buffer to align to the next byte boundary."
+  (let* ((reader (current-flac-reader))
+         (bit-length (flac-reader-bit-buffer-length reader))
+         (bits-to-discard (modulo bit-length 8)))
+    (set-flac-reader-bit-buffer-length! reader (- bit-length bits-to-discard))))
 
 (define (flac-read-bytes n)
+  "Read N bytes from the FLAC stream and return as a bytevector."
   (u8-list->bytevector (map (λ (_) (flac-read-uint 8)) (iota n))))
 
 (define (flac-read-uint bits)
+  "Read an unsigned integer of BITS width from the FLAC stream."
   (flac-read-bits (current-flac-reader) bits))
 
 (define (flac-read-sint bits)
-  (let ([uint (flac-read-uint bits)])
+  "Read a signed integer of BITS width from the FLAC stream (two's complement)."
+  (let ((uint (flac-read-uint bits)))
     (- uint (bitwise-arithmetic-shift (bitwise-arithmetic-shift-right uint (- bits 1)) bits))))
 
 (define (flac-read-rice-sint param)
-  (let rice-loop ([val 0])
+  "Read a Rice-encoded signed integer with the given Rice parameter.
+   Uses unary coding for quotient and binary coding for remainder,
+   then applies zigzag decoding to convert unsigned to signed."
+  (let rice-loop ((quotient 0))
     (if (= 0 (flac-read-uint 1))
-        (rice-loop (+ 1 val))
-        (let ([val (bitwise-ior
-                    (bitwise-arithmetic-shift val param)
-                    (flac-read-uint param))])
+        ;; Read unary quotient: count zeros until we hit a one
+        (rice-loop (+ 1 quotient))
+        ;; Combine quotient and remainder, then zigzag decode
+        (let ((unsigned-val (bitwise-ior
+                             (bitwise-arithmetic-shift quotient param)
+                             (flac-read-uint param))))
+          ;; Zigzag decode: (n >> 1) ^ -(n & 1)
           (bitwise-xor
-           (bitwise-arithmetic-shift-right val 1)
-           (* -1 (bitwise-and val 1)))))))
+           (bitwise-arithmetic-shift-right unsigned-val 1)
+           (* -1 (bitwise-and unsigned-val 1)))))))
 
 (define (flac-read/assert-magic)
-  (unless (= FLAC-MAGIC (flac-read-uint 32))
-    #f))
+  "Read and verify the FLAC magic number. Throws an error if not a valid FLAC stream."
+  (let ((magic (flac-read-uint 32)))
+    (unless (= FLAC-MAGIC magic)
+      (error "Not a valid FLAC stream - invalid magic number"
+             (format #f "Expected 0x~x, got 0x~x" FLAC-MAGIC magic)))))
 
 (define (flac-read-coded-number)
+  "Read a UTF-8-style variable-length coded number from the FLAC stream.
+   Used for frame/sample numbers in the frame header."
   (let coded-number-loop ((coded-sample-number (flac-read-uint 8)))
     (if (< coded-sample-number #b11000000)
         coded-sample-number

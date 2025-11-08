@@ -115,8 +115,9 @@
     ('skip (begin (flac-read-bytes block-length) #f))))
 
 (define (resolve-block-type search-type block-type)
-  (if (symbol? search-type)
-      (if (equal? search-type block-type) block-type 'skip)
+  "Determine whether to read or skip a metadata block based on search-type."
+  (if (and (symbol? search-type) (not (equal? search-type block-type)))
+      'skip
       block-type))
 
 (define* (read-flac-metadata #:optional (search-type #f))

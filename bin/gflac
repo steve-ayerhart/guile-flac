@@ -60,5 +60,4 @@ Use 'gflac <command> --help' for more information on a command.
           (show-help)
           (exit 1))))))
 
-;; Entry point
 (main (command-line))
