@@ -60,10 +60,20 @@
   (let* ((total-bytes (floor-quotient (frame-header-bits-per-sample (current-frame-header)) 8))
          (addend (if (= 8 (frame-header-bits-per-sample (current-frame-header))) 128 0))
          (data-bv (make-bytevector total-bytes)))
-    (do-ec (:range channel 0 (stream-info-channels (current-stream-info)))
-           (do-ec (:range sample 0 (frame-header-blocksize (current-frame-header)))
-                  (begin
-                    (bytevector-sint-set! data-bv 0 (+ addend (array-cell-ref (current-frame-samples) channel sample)) (endianness little) total-bytes)
+    ;; WAV format requires interleaved samples: ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...
+    ;; So we loop over samples first, then channels within each sample
+    (do-ec (:range sample 0 (frame-header-blocksize (current-frame-header)))
+           (do-ec (:range channel 0 (stream-info-channels (current-stream-info)))
+                  (let ((val (array-cell-ref (current-frame-samples) channel sample))
+                        (final-val (+ addend (array-cell-ref (current-frame-samples) channel sample))))
+                    (when (or (< final-val -32768) (> final-val 32767))
+                      (format (current-error-port) "ERROR: Sample out of range!\n")
+                      (format (current-error-port) "Channel ~a, Sample ~a\n" channel sample)
+                      (format (current-error-port) "Raw value: ~a\n" val)
+                      (format (current-error-port) "With addend (~a): ~a\n" addend final-val)
+                      (format (current-error-port) "Frame header: ~s\n" (current-frame-header))
+                      (error "Sample value out of range"))
+                    (bytevector-sint-set! data-bv 0 final-val (endianness little) total-bytes)
                     (put-bytevector (current-output-port) data-bv))))))
 
 (define (with-flac-file-decoder infile thunk)

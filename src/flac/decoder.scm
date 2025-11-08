@@ -131,14 +131,12 @@
 (define (restore-linear-prediction channel coefficients order shift)
   (let ((blocksize (frame-header-blocksize (current-frame-header))))
     (do-ec (: i order blocksize)
-           (let ((residual (array-cell-ref (current-frame-samples) channel i)))
-             (array-cell-set!
-              (current-frame-samples)
-              (+ residual
-                 (bitwise-arithmetic-shift-right
-                  (sum-ec (: c (index j) coefficients) (* (array-cell-ref (current-frame-samples) channel (- i (- order j))) c))
-                  shift))
-              channel i)))))
+           (let* ((residual (array-cell-ref (current-frame-samples) channel i))
+                  (prediction-sum (sum-ec (: c (index j) coefficients)
+                                          (* (array-cell-ref (current-frame-samples) channel (- i (- order j))) c)))
+                  (prediction (bitwise-arithmetic-shift-right prediction-sum shift))
+                  (result (+ residual prediction)))
+             (array-cell-set! (current-frame-samples) result channel i)))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#coded-residual
@@ -189,10 +187,16 @@
 
 (define (stereo-decorrelate-mid blocksize)
   (do-ec (:range b 0 blocksize)
-         (let* ((side (array-cell-ref (current-frame-samples) 1 b))
-                (right (- (array-cell-ref (current-frame-samples) 0 b) (bitwise-arithmetic-shift-right side 1))))
-           (array-cell-set! (current-frame-samples) right 1 b)
-           (array-cell-set! (current-frame-samples) (+ right side) 0 b))))
+         (let* ((mid (array-cell-ref (current-frame-samples) 0 b))
+                (side (array-cell-ref (current-frame-samples) 1 b))
+                ;; Shift mid left by 1 bit and add 1 if side is odd
+                (mid-adjusted (+ (bitwise-arithmetic-shift-left mid 1)
+                                 (if (odd? side) 1 0)))
+                ;; Reconstruct left and right
+                (left (bitwise-arithmetic-shift-right (+ mid-adjusted side) 1))
+                (right (bitwise-arithmetic-shift-right (- mid-adjusted side) 1)))
+           (array-cell-set! (current-frame-samples) left 0 b)
+           (array-cell-set! (current-frame-samples) right 1 b))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation channel-assignment)
@@ -249,15 +253,14 @@
            (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel po))
     ;; residuals
     (read-residual-partitioned-rice channel blocksize predictor-order)
-    (restore-linear-prediction channel (list-ref fixed-coefficients predictor-order) predictor-order 0)))
+    ;; Coefficients need to be reversed to apply to most recent samples first
+    (restore-linear-prediction channel (reverse (list-ref fixed-coefficients predictor-order)) predictor-order 0)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-linear-predictor-subframe
 (define (read-subframe-lpc channel lpc-order blocksize sample-depth)
   ;; warmup
   (do-ec (:range o 0 lpc-order)
          (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel o))
-
-  (when (log-port) (format (log-port) "lpc warm up samples: ~s\n" (array-cell-ref (current-frame-samples) channel)))
 
   (let* ((precision (+ 1 (flac-read-uint 4)))
          (shift (flac-read-sint 5))
@@ -272,9 +275,7 @@
         (channel-assignment (frame-header-channel-assignment (current-frame-header))))
     (do ((channel 0 (1+ channel)))
         ((>= channel channels))
-      (begin
-        (read-subframe channel)
-        (when (log-port) (format (log-port) "~s\n" (current-subframe-header)))))))
+      (read-subframe channel))))
 
 ;;; TODO: actually verify the checksum
 (define (read-frame-footer)
@@ -307,7 +308,6 @@
 
 (define (read-frame)
   (read-frame-header)
-  (when (log-port) (format (log-port) "~s\n" (current-frame-header)))
   (read-subframes)
   (stereo-decorrelation (frame-header-channel-assignment (current-frame-header)))
   (align-to-byte)
