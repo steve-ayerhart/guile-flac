@@ -88,6 +88,8 @@
          (block-alignment (* num-channels storage-bytes))
          (bytes-per-sec (* sample-rate block-alignment))
          (data-size (* num-samples block-alignment))
+         ;; RIFF chunks must be word-aligned: add padding byte if data size is odd
+         (padding-size (if (odd? data-size) 1 0))
          ;; Use WAVE_FORMAT_EXTENSIBLE when:
          ;; - More than 2 channels, OR
          ;; - Bits per sample differs from storage (e.g., 12-bit in 16-bit, 20-bit in 24-bit), OR
@@ -100,7 +102,7 @@
         (bytestructure
          header-struct-extensible
          `((filetype "RIFF")
-           (filesize ,(+ 60 data-size))  ; 4 (WAVE) + 8 (fmt) + 40 (fmt data) + 8 (data) + data-size = 60 + data-size
+           (filesize ,(+ 60 data-size padding-size))  ; 4 (WAVE) + 8 (fmt) + 40 (fmt data) + 8 (data) + data-size + padding
            (filetype-header "WAVE")
            (format-chunk-marker "fmt ")
            (format-chunk-length 40)
@@ -120,7 +122,7 @@
         (bytestructure
          header-struct-pcm
          `((filetype "RIFF")
-           (filesize ,(+ 36 data-size))  ; 4 (WAVE) + 8 (fmt) + 16 (fmt data) + 8 (data) + data-size = 36 + data-size
+           (filesize ,(+ 36 data-size padding-size))  ; 4 (WAVE) + 8 (fmt) + 16 (fmt data) + 8 (data) + data-size + padding
            (filetype-header "WAVE")
            (format-chunk-marker "fmt ")
            (format-chunk-length 16)
@@ -234,27 +236,33 @@
            (let loop ((samples-written 0))
              (let ((frame (read-flac-frame)))
                (if (eof-object? frame)
-                   ;; Done decoding - update header if samples were unknown
-                   (when total-samples-unknown?
-                     (let* ((channels (stream-info-channels stream-info))
-                            (bits-per-sample (stream-info-bits-per-sample stream-info))
-                            (storage-bytes (cond
-                                            ((<= bits-per-sample 8) 1)
-                                            ((<= bits-per-sample 16) 2)
-                                            ((<= bits-per-sample 24) 3)
-                                            (else 4)))
-                            (data-size (* samples-written channels storage-bytes))
-                            (use-extensible? (or (> channels 2)
-                                                (not (= bits-per-sample (* storage-bytes 8)))
-                                                (= bits-per-sample 24)))
-                            (header-overhead (if use-extensible? 60 36))
-                            (file-size (+ header-overhead data-size)))
-                       ;; Seek back to beginning and rewrite header with correct sizes
-                       (seek port 0 SEEK_SET)
-                       ;; Update the bytestructure with actual sizes
-                       (bytestructure-set! wav-header 'filesize file-size)
-                       (bytestructure-set! wav-header 'data-chunk-size data-size)
-                       (put-bytevector port (bytestructure-unwrap wav-header))))
+                   ;; Done decoding
+                   (let* ((channels (stream-info-channels stream-info))
+                          (bits-per-sample (stream-info-bits-per-sample stream-info))
+                          (storage-bytes (cond
+                                          ((<= bits-per-sample 8) 1)
+                                          ((<= bits-per-sample 16) 2)
+                                          ((<= bits-per-sample 24) 3)
+                                          (else 4)))
+                          (final-samples (if total-samples-unknown? samples-written (stream-info-samples stream-info)))
+                          (data-size (* final-samples channels storage-bytes))
+                          (padding-size (if (odd? data-size) 1 0)))
+                     ;; Write padding byte if data size is odd (RIFF word alignment)
+                     (when (= padding-size 1)
+                       (put-u8 port 0))
+                     ;; Update header if samples were unknown
+                     (when total-samples-unknown?
+                       (let* ((use-extensible? (or (> channels 2)
+                                                  (not (= bits-per-sample (* storage-bytes 8)))
+                                                  (= bits-per-sample 24)))
+                              (header-overhead (if use-extensible? 60 36))
+                              (file-size (+ header-overhead data-size padding-size)))
+                         ;; Seek back to beginning and rewrite header with correct sizes
+                         (seek port 0 SEEK_SET)
+                         ;; Update the bytestructure with actual sizes
+                         (bytestructure-set! wav-header 'filesize file-size)
+                         (bytestructure-set! wav-header 'data-chunk-size data-size)
+                         (put-bytevector port (bytestructure-unwrap wav-header)))))
                    ;; Continue decoding
                    (begin
                      (parameterize ((current-output-port port))
