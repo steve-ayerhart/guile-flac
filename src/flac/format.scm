@@ -53,6 +53,8 @@
 
             %make-metadata-picture
             metadata-picture?
+            picture-type picture-mime-type picture-description
+            picture-width picture-height picture-depth picture-colors picture-data
             flac-picture-type
 
             %make-metadata-seek-table

@@ -1,0 +1,64 @@
+#!/usr/bin/env guile
+!#
+
+;;; gflac - Unified FLAC tool for Guile-FLAC
+;;;
+;;; Copyright (C) 2025 Steve Ayerhart <steve@ayerh.art>
+;;;
+;;; This program is free software: you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation, either version 3 of the License, or
+;;; (at your option) any later version.
+
+(add-to-load-path (string-append (dirname (car (command-line))) "/../src"))
+
+(use-modules (flac version)
+             (gflac meta)
+             (ice-9 format))
+
+(define (show-help)
+  (format #t "gflac - Guile FLAC tool version ~a
+
+Usage:
+  gflac <command> [options] [files...]
+
+Available commands:
+  meta      Metadata operations (list, show, edit tags)
+  decode    Decode FLAC files to WAV (future)
+  encode    Encode WAV files to FLAC (future)
+
+Use 'gflac <command> --help' for more information on a command.
+" (flac-version/string)))
+
+(define (show-version)
+  (format #t "gflac version ~a~%Part of Guile-FLAC~%" (flac-version/string)))
+
+(define (main args)
+  (if (< (length args) 2)
+      (begin (show-help) (exit 1))
+      (let ((cmd (cadr args)))
+        (cond
+         ((or (string=? cmd "--help") (string=? cmd "-h"))
+          (show-help) (exit 0))
+
+         ((or (string=? cmd "--version") (string=? cmd "-v"))
+          (show-version) (exit 0))
+
+         ((string=? cmd "meta")
+          (meta-command (cons (car args) (cddr args))))
+
+         ((string=? cmd "decode")
+          (format (current-error-port) "Error: decode subcommand not yet implemented~%")
+          (exit 1))
+
+         ((string=? cmd "encode")
+          (format (current-error-port) "Error: encode subcommand not yet implemented~%")
+          (exit 1))
+
+         (else
+          (format (current-error-port) "Error: Unknown command '~a'~%" cmd)
+          (show-help)
+          (exit 1))))))
+
+;; Entry point
+(main (command-line))
