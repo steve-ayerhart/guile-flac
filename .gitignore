@@ -25,6 +25,9 @@ tags
 # Ignore directories and archives made by "make distcheck"
 guile-flac-*
 
+# Generated scripts
+bin/gflac
+
 .DS_Store
 .idea
 *.log

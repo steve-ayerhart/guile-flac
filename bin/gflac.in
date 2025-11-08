@@ -10,7 +10,7 @@
 ;;; the Free Software Foundation, either version 3 of the License, or
 ;;; (at your option) any later version.
 
-(add-to-load-path (string-append (dirname (car (command-line))) "/../src"))
+(add-to-load-path "@GUILE_SITEDIR@")
 
 (use-modules (flac version)
              (gflac meta)

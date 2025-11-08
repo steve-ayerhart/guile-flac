@@ -19,7 +19,7 @@
 
 ACLOCAL_AMFLAGS = -I build-aux
 
-SUBDIRS = build-aux src tests
+SUBDIRS = build-aux bin src tests
 
 EXTRA_DIST = \
 	build-aux/config.rpath \

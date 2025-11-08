@@ -76,6 +76,7 @@ AC_CONFIG_FILES([
     build-aux/Makefile
     build-aux/am/Makefile
     build-aux/m4/Makefile
+    bin/Makefile
     src/Makefile
     src/flac/Makefile
     tests/Makefile
