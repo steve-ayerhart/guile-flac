@@ -5,6 +5,7 @@
   #:use-module (flac format)
 
   #:use-module (srfi srfi-42)
+  #:use-module (rnrs arithmetic bitwise)
 
   #:use-module (bytestructures guile)
   #:use-module (rnrs bytevectors)
@@ -17,7 +18,8 @@
             flac-file-decode-logger
             flac-file-frame-logger))
 
-(define header-struct
+;; Standard PCM WAV header
+(define header-struct-pcm
   (bs:struct `((filetype ,(bs:string 4 'utf8))
                (filesize ,uint32)
                (filetype-header ,(bs:string 4 'utf8))
@@ -32,48 +34,138 @@
                (data-chunk-header ,(bs:string 4 'utf8))
                (data-chunk-size ,uint32))))
 
+;; WAVE_FORMAT_EXTENSIBLE header for >2 channels or non-standard bit depths
+(define header-struct-extensible
+  (bs:struct `((filetype ,(bs:string 4 'utf8))
+               (filesize ,uint32)
+               (filetype-header ,(bs:string 4 'utf8))
+               (format-chunk-marker ,(bs:string 4 'utf8))
+               (format-chunk-length ,uint32)  ; 40 for extensible (16 + 24 extra)
+               (format-type ,uint16)          ; 0xFFFE for extensible
+               (num-channels ,uint16)
+               (sample-freq ,uint32)
+               (bytes/sec ,uint32)
+               (block-alignment ,uint16)
+               (bits-per-sample ,uint16)      ; Container size (storage)
+               (cb-size ,uint16)              ; 22 bytes of extra data
+               (valid-bits-per-sample ,uint16) ; Actual significant bits
+               (channel-mask ,uint32)
+               (sub-format-guid ,(bs:vector 16 uint8))  ; PCM GUID
+               (data-chunk-header ,(bs:string 4 'utf8))
+               (data-chunk-size ,uint32))))
+
+;; PCM SubFormat GUID: {00000001-0000-0010-8000-00aa00389b71}
+(define pcm-subformat-guid
+  #vu8(#x01 #x00 #x00 #x00 #x00 #x00 #x10 #x00
+       #x80 #x00 #x00 #xaa #x00 #x38 #x9b #x71))
+
+(define (get-channel-mask num-channels)
+  "Return the channel mask for NUM-CHANNELS using standard speaker positions"
+  (case num-channels
+    ((1) #x4)        ; SPEAKER_FRONT_CENTER
+    ((2) #x3)        ; SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+    ((3) #x7)        ; FL | FR | FC
+    ((4) #x33)       ; FL | FR | BL | BR
+    ((5) #x37)       ; FL | FR | FC | BL | BR
+    ((6) #x3F)       ; FL | FR | FC | LFE | BL | BR (5.1)
+    ((7) #x13F)      ; 5.1 + BC
+    ((8) #x63F)      ; 7.1
+    (else #x0)))     ; Undefined
+
 (define (build-wav-header)
-  (bytestructure
-   header-struct
-   `((filetype "RIFF")
-     (filesize ,(+ 36 (* (stream-info-samples (current-stream-info))
-                         (stream-info-channels (current-stream-info))
-                         (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8))))
-     (filetype-header "WAVE")
-     (format-chunk-marker "fmt ")
-     (format-chunk-length 16)
-     (format-type #x0001)
-     (num-channels ,(stream-info-channels (current-stream-info)))
-     (sample-freq ,(stream-info-sample-rate (current-stream-info)))
-     (bytes/sec ,(* (stream-info-sample-rate (current-stream-info))
-                    (stream-info-channels (current-stream-info))
-                    (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
-     (block-alignment ,(* (stream-info-channels (current-stream-info))
-                          (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8)))
-     (bits-per-sample ,(stream-info-bits-per-sample (current-stream-info)))
-     (data-chunk-header "data")
-     (data-chunk-size ,(* (stream-info-samples (current-stream-info))
-                          (stream-info-channels (current-stream-info))
-                          (floor-quotient (stream-info-bits-per-sample (current-stream-info)) 8))))))
+  (let* ((bits-per-sample (stream-info-bits-per-sample (current-stream-info)))
+         ;; Round up to next byte boundary for storage (12->16, 20->24, etc.)
+         (storage-bytes (cond
+                         ((<= bits-per-sample 8) 1)
+                         ((<= bits-per-sample 16) 2)
+                         ((<= bits-per-sample 24) 3)
+                         (else 4)))
+         (storage-bits (* storage-bytes 8))
+         (num-channels (stream-info-channels (current-stream-info)))
+         (sample-rate (stream-info-sample-rate (current-stream-info)))
+         (num-samples (stream-info-samples (current-stream-info)))
+         (block-alignment (* num-channels storage-bytes))
+         (bytes-per-sec (* sample-rate block-alignment))
+         (data-size (* num-samples block-alignment))
+         ;; Use WAVE_FORMAT_EXTENSIBLE when:
+         ;; - More than 2 channels, OR
+         ;; - Bits per sample differs from storage (e.g., 12-bit in 16-bit, 20-bit in 24-bit), OR
+         ;; - 24-bit samples (standard practice for 24-bit files)
+         (use-extensible? (or (> num-channels 2)
+                             (not (= bits-per-sample storage-bits))
+                             (= bits-per-sample 24))))
+    (if use-extensible?
+        ;; WAVE_FORMAT_EXTENSIBLE
+        (bytestructure
+         header-struct-extensible
+         `((filetype "RIFF")
+           (filesize ,(+ 60 data-size))  ; 4 (WAVE) + 8 (fmt) + 40 (fmt data) + 8 (data) + data-size = 60 + data-size
+           (filetype-header "WAVE")
+           (format-chunk-marker "fmt ")
+           (format-chunk-length 40)
+           (format-type #xFFFE)
+           (num-channels ,num-channels)
+           (sample-freq ,sample-rate)
+           (bytes/sec ,bytes-per-sec)
+           (block-alignment ,block-alignment)
+           (bits-per-sample ,storage-bits)
+           (cb-size 22)
+           (valid-bits-per-sample ,bits-per-sample)
+           (channel-mask ,(get-channel-mask num-channels))
+           (sub-format-guid ,pcm-subformat-guid)
+           (data-chunk-header "data")
+           (data-chunk-size ,data-size)))
+        ;; Standard PCM
+        (bytestructure
+         header-struct-pcm
+         `((filetype "RIFF")
+           (filesize ,(+ 36 data-size))  ; 4 (WAVE) + 8 (fmt) + 16 (fmt data) + 8 (data) + data-size = 36 + data-size
+           (filetype-header "WAVE")
+           (format-chunk-marker "fmt ")
+           (format-chunk-length 16)
+           (format-type #x0001)
+           (num-channels ,num-channels)
+           (sample-freq ,sample-rate)
+           (bytes/sec ,bytes-per-sec)
+           (block-alignment ,block-alignment)
+           (bits-per-sample ,storage-bits)
+           (data-chunk-header "data")
+           (data-chunk-size ,data-size))))))
 
 (define (write-frame)
-  (let* ((total-bytes (floor-quotient (frame-header-bits-per-sample (current-frame-header)) 8))
-         (addend (if (= 8 (frame-header-bits-per-sample (current-frame-header))) 128 0))
-         (data-bv (make-bytevector total-bytes)))
+  (let* ((bits-per-sample (frame-header-bits-per-sample (current-frame-header)))
+         ;; Round up to next byte boundary for storage (12->16, 20->24, etc.)
+         (storage-bytes (cond
+                         ((<= bits-per-sample 8) 1)
+                         ((<= bits-per-sample 16) 2)
+                         ((<= bits-per-sample 24) 3)
+                         (else 4)))
+         (storage-bits (* storage-bytes 8))
+         (addend (if (= 8 bits-per-sample) 128 0))
+         ;; For non-byte-aligned samples, we need to left-align in the container
+         ;; e.g., 12-bit samples in 16-bit container: shift left by 4
+         (shift-amount (- storage-bits bits-per-sample))
+         (data-bv (make-bytevector storage-bytes))
+         ;; Calculate valid range based on ACTUAL bit depth, not storage size
+         (max-val (- (expt 2 (- bits-per-sample 1)) 1))
+         (min-val (- (expt 2 (- bits-per-sample 1)))))
     ;; WAV format requires interleaved samples: ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...
     ;; So we loop over samples first, then channels within each sample
     (do-ec (:range sample 0 (frame-header-blocksize (current-frame-header)))
            (do-ec (:range channel 0 (stream-info-channels (current-stream-info)))
-                  (let ((val (array-cell-ref (current-frame-samples) channel sample))
-                        (final-val (+ addend (array-cell-ref (current-frame-samples) channel sample))))
-                    (when (or (< final-val -32768) (> final-val 32767))
+                  (let* ((val (array-cell-ref (current-frame-samples) channel sample))
+                         (adjusted-val (+ addend val))
+                         ;; Left-align the sample in its container
+                         (final-val (bitwise-arithmetic-shift-left adjusted-val shift-amount)))
+                    (when (or (< adjusted-val min-val) (> adjusted-val max-val))
                       (format (current-error-port) "ERROR: Sample out of range!\n")
                       (format (current-error-port) "Channel ~a, Sample ~a\n" channel sample)
                       (format (current-error-port) "Raw value: ~a\n" val)
-                      (format (current-error-port) "With addend (~a): ~a\n" addend final-val)
+                      (format (current-error-port) "With addend (~a): ~a\n" addend adjusted-val)
+                      (format (current-error-port) "Bits per sample: ~a (range: ~a to ~a)\n" bits-per-sample min-val max-val)
                       (format (current-error-port) "Frame header: ~s\n" (current-frame-header))
                       (error "Sample value out of range"))
-                    (bytevector-sint-set! data-bv 0 final-val (endianness little) total-bytes)
+                    (bytevector-sint-set! data-bv 0 final-val (endianness little) storage-bytes)
                     (put-bytevector (current-output-port) data-bv))))))
 
 (define (with-flac-file-decoder infile thunk)
