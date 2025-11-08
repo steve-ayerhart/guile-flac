@@ -30,3 +30,4 @@ guile-flac-*
 *.log
 *.trs
 tmp/
+INSTALL
