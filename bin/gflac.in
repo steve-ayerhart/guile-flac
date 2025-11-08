@@ -14,6 +14,7 @@
 
 (use-modules (flac version)
              (gflac meta)
+             (gflac decode)
              (ice-9 format))
 
 (define (show-help)
@@ -24,7 +25,7 @@ Usage:
 
 Available commands:
   meta      Metadata operations (list, show, edit tags)
-  decode    Decode FLAC files to WAV (future)
+  decode    Decode FLAC files to WAV
   encode    Encode WAV files to FLAC (future)
 
 Use 'gflac <command> --help' for more information on a command.
@@ -48,8 +49,7 @@ Use 'gflac <command> --help' for more information on a command.
           (meta-command (cons (car args) (cddr args))))
 
          ((string=? cmd "decode")
-          (format (current-error-port) "Error: decode subcommand not yet implemented~%")
-          (exit 1))
+          (decode-command (cons (car args) (cddr args))))
 
          ((string=? cmd "encode")
           (format (current-error-port) "Error: encode subcommand not yet implemented~%")
