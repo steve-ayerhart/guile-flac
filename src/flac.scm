@@ -4,6 +4,7 @@
   #:use-module (flac metadata)
   #:use-module (flac format)
 
+  #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-42)
   #:use-module (rnrs arithmetic bitwise)
 
@@ -186,9 +187,11 @@
        (current-input-port)
        (lambda ()
          (flac-read/assert-magic)
-         (with-initialized-decoder
-          (flac-metadata-stream-info (read-flac-metadata))
-          thunk))))
+         (let* ((metadata (read-flac-metadata))
+                (stream-info (find metadata-stream-info? metadata)))
+           (unless stream-info
+             (error "FLAC file missing required STREAMINFO metadata block"))
+           (with-initialized-decoder stream-info thunk)))))
     #:binary #t))
 
 (define (flac-file-frame-logger infile count)

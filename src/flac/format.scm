@@ -34,9 +34,11 @@
             %make-metadata-padding metadata-padding?
             padding-length
 
-            metadata-cuesheet?
+            %make-metadata-cuesheet metadata-cuesheet?
+            %make-metadata-cuesheet-track
+            %make-metadata-cuesheet-index
 
-            metadata-application?
+            %make-metadata-application metadata-application?
 
             %make-metadata-stream-info metadata-stream-info?
             stream-info-min-block-size stream-info-max-block-size
@@ -48,13 +50,6 @@
             metadata-vorbis-comment?
             vorbis-comment-vendor
             vorbis-comment-comments
-
-            %make-flac-metadata
-            %empty-flac-metadata
-            add-metadata
-            flac-metadata-stream-info set-flac-metadata-stream-info!
-            flac-metadata-metadata set-flac-metadata-metadata!
-
 
             %make-metadata-picture
             metadata-picture?
@@ -248,21 +243,3 @@
  <picture>
  (λ (record port)
    (format port "#<<picture> type: ~a mime-type: ~a>" (picture-type record) (picture-mime-type record))))
-
-(define-record-type <flac-metadata>
-  (%make-flac-metadata stream-info metadata)
-  flac-metadata?
-  (stream-info flac-metadata-stream-info set-flac-metadata-stream-info!)
-  (metadata flac-metadata-metadata set-flac-metadata-metadata!))
-
-(define %empty-flac-metadata
-  (%make-flac-metadata #f '()))
-
-(define (add-metadata flac-metadata metadata)
-  (when metadata
-    (if (metadata-stream-info? metadata)
-        (set-flac-metadata-stream-info! flac-metadata metadata)
-        (if (list? (flac-metadata-metadata flac-metadata))
-            (set-flac-metadata-metadata! flac-metadata (cons metadata (flac-metadata-metadata flac-metadata)))
-            (set-flac-metadata-metadata! flac-metadata (list metadata)))))
-  flac-metadata)

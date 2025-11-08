@@ -33,6 +33,7 @@
              (ice-9 receive)
              (ice-9 format)
 
+             (srfi srfi-1)
              (srfi srfi-64))
 
 ;;; https://datatracker.ietf.org/doc/html/draft-ietf-cellar-flac#name-decoding-example-1
@@ -64,13 +65,14 @@
    (open-bytevector-input-port example-1)
    (λ ()
      (flac-read/assert-magic)
-     (let ((metadata (read-flac-metadata)))
+     (let* ((metadata (read-flac-metadata))
+            (stream-info (find metadata-stream-info? metadata)))
        (with-initialized-decoder
-        (flac-metadata-stream-info metadata)
+        stream-info
         (lambda ()
 
           (test-group "Metadata"
-            (test-equal "stream info" expected-stream-info (flac-metadata-stream-info metadata)))
+            (test-equal "stream info" expected-stream-info stream-info))
 
           (read-flac-frame)
 
@@ -142,14 +144,15 @@
    (open-bytevector-input-port example-2)
    (λ ()
      (flac-read/assert-magic)
-     (let ((metadata (read-flac-metadata)))
+     (let* ((metadata (read-flac-metadata))
+            (stream-info (find metadata-stream-info? metadata)))
        (with-initialized-decoder
-        (flac-metadata-stream-info metadata)
+        stream-info
         (lambda ()
 
           (test-group "Metadata"
             (test-equal "stream info"
-              (flac-metadata-stream-info metadata) expected-stream-info)
+              stream-info expected-stream-info)
             (test-equal "vorbis comment"
               (find-metadata metadata 'vorbis-comment) expected-vorbis-comment)
             (test-equal "padding"
@@ -199,13 +202,14 @@
    (open-bytevector-input-port example-3)
    (λ ()
      (flac-read/assert-magic)
-     (let ((metadata (read-flac-metadata)))
+     (let* ((metadata (read-flac-metadata))
+            (stream-info (find metadata-stream-info? metadata)))
        (with-initialized-decoder
-        (flac-metadata-stream-info metadata)
+        stream-info
         (lambda ()
 
           (test-group "Metadata"
-            (test-equal "stream info" expected-stream-info (flac-metadata-stream-info metadata)))
+            (test-equal "stream info" expected-stream-info stream-info))
 
           (test-group "Frames"
 

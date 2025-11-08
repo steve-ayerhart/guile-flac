@@ -353,7 +353,9 @@
        (current-input-port)
        (lambda ()
          (flac-read/assert-magic)
-         (with-initialized-decoder
-          (flac-metadata-stream-info (read-flac-metadata))
-          thunk))))
+         (let* ((metadata (read-flac-metadata))
+                (stream-info (find metadata-stream-info? metadata)))
+           (unless stream-info
+             (error "FLAC file missing required STREAMINFO metadata block"))
+           (with-initialized-decoder stream-info thunk)))))
     #:binary #t))
