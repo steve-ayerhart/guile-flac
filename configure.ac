@@ -55,6 +55,17 @@ GUILE_PROGS
 GUILE_FLAGS
 GUILE_SITE_DIR
 
+dnl Check for required Guile modules
+GUILE_MODULE_REQUIRED(bytestructures guile)
+
+dnl Check for optional Guile modules
+GUILE_MODULE_AVAILABLE(have_guile_gcrypt, gcrypt hash)
+if test "$have_guile_gcrypt" = "yes"; then
+   AC_MSG_NOTICE([guile-gcrypt found - MD5 checksum verification will be available])
+else
+   AC_MSG_WARN([guile-gcrypt not found - MD5 checksum verification will be disabled])
+fi
+
 if test "x$guilesitedir" = "x"; then
    guilesitedir="$datadir/guile/site/$GUILE_EFFECTIVE_VERSION"
 fi

@@ -10,14 +10,81 @@
 
   #:use-module (bytestructures guile)
   #:use-module (rnrs bytevectors)
+  #:use-module (scheme base)
   #:use-module (ice-9 binary-ports)
-
-  #:use-module (gcrypt hash)
+  #:use-module (ice-9 format)
 
   #:export (decode-flac-file
             with-flac-file-decoder
             flac-file-decode-logger
-            flac-file-frame-logger))
+            flac-file-frame-logger
+            current-md5-bytevectors
+            gcrypt-available?
+            verify-md5?
+            md5-mismatch-handler
+            compute-md5-hash
+            bytevector->hex-string))
+
+;; Conditionally load gcrypt for MD5 verification
+(define gcrypt-available?
+  (catch #t
+    (lambda ()
+      (resolve-module '(gcrypt hash))
+      #t)
+    (lambda (key . args)
+      #f)))
+
+;; Import hash functions if gcrypt is available
+;; Only import hash-related symbols to avoid conflicts with bytestructures (uint32, uint16)
+(when gcrypt-available?
+  (let* ((gcrypt-hash (resolve-module '(gcrypt hash)))
+         (hash-syms '(hash-algorithm md5 bytevector-hash)))
+    (for-each
+     (lambda (sym)
+       (module-define! (current-module) sym
+                      (module-ref gcrypt-hash sym)))
+     hash-syms)))
+
+;; Parameter for MD5 accumulation - stores list of bytevectors for all frames
+(define current-md5-bytevectors (make-parameter #f))
+
+;; Parameter to control MD5 verification (defaults to enabled if gcrypt available)
+(define verify-md5? (make-parameter gcrypt-available?))
+
+;; Handler for MD5 mismatches - can be customized by user
+;; Default: print warning to stderr
+(define md5-mismatch-handler
+  (make-parameter
+   (lambda (expected computed)
+     (format (current-error-port) "WARNING: MD5 checksum mismatch!~%")
+     (format (current-error-port) "Expected: ~a~%Computed: ~a~%" expected computed))))
+
+;; Format bytevector as hex string for MD5 display
+(define (bytevector->hex-string bv)
+  (string-join
+   (map (lambda (byte) (format #f "~2,'0x" byte))
+        (bytevector->u8-list bv))
+   ""))
+
+;; Compute MD5 hash (only called when gcrypt is available)
+(define (compute-md5-hash bv)
+  (if gcrypt-available?
+      ((module-ref (resolve-module '(gcrypt hash)) 'bytevector-hash)
+       bv
+       ((module-ref (resolve-module '(gcrypt hash)) 'lookup-hash-algorithm) 'md5))
+      #f))
+
+;; Convert frame samples to bytevector for MD5 computation
+;; FLAC spec: MD5 of interleaved signed little-endian PCM samples
+(define (frame-samples->bytevector)
+  (let* ((channels (stream-info-channels (current-stream-info)))
+         (blocksize (frame-header-blocksize (current-frame-header)))
+         (bits-per-sample (frame-header-bits-per-sample (current-frame-header)))
+         (sample-bytes (ceiling-quotient bits-per-sample 8))
+         (samples (list-ec (:range sample 0 blocksize)
+                          (:range channel 0 channels)
+                          (array-cell-ref (current-frame-samples) channel sample))))
+    (sint-list->bytevector samples (endianness little) sample-bytes)))
 
 ;; Standard PCM WAV header
 (define header-struct-pcm
@@ -211,15 +278,8 @@
                       (frame (read-flac-frame)))
        (if (eof-object? frame)
            #t
-           (let* ((channels (stream-info-channels (current-stream-info)))
-                  (blocksize (frame-header-blocksize (current-frame-header)))
-                  (sample-bytes (floor-quotient (frame-header-bits-per-sample (current-frame-header)) 8))
-                  (samples (list-ec (:range sample 0 blocksize)
-                                    (:range channel 0 channels)
-                                    (array-cell-ref (current-frame-samples) channel sample)))
-                  (thing (sint-list->bytevector samples (endianness little) sample-bytes))
-                  (frame-md5 (bytevector-hash (sint-list->bytevector samples (endianness little) sample-bytes) (hash-algorithm md5))))
-             thing))))))
+           (begin
+             (frame-loop (+ frame-number 1) (read-flac-frame))))))))
 
 (define (decode-flac-file infile outfile)
   (with-flac-file-decoder
@@ -230,6 +290,9 @@
             (wav-header (build-wav-header))
             ;; Open output file in read-write mode so we can seek back to update header
             (port (open-file outfile "wb+")))
+       ;; Initialize MD5 bytevector list if verification is enabled
+       (when (and gcrypt-available? (verify-md5?))
+         (current-md5-bytevectors '()))
        (catch #t
          (lambda ()
            ;; Write initial header (may have size=0 if samples unknown)
@@ -265,9 +328,25 @@
                          ;; Update the bytestructure with actual sizes
                          (bytestructure-set! wav-header 'filesize file-size)
                          (bytestructure-set! wav-header 'data-chunk-size data-size)
-                         (put-bytevector port (bytestructure-unwrap wav-header)))))
+                         (put-bytevector port (bytestructure-unwrap wav-header))))
+                     ;; Verify MD5 if enabled
+                     (when (and gcrypt-available? (verify-md5?) (current-md5-bytevectors))
+                       (let* ((all-samples (apply bytevector-append (reverse (current-md5-bytevectors))))
+                              (computed-hash (compute-md5-hash all-samples))
+                              (expected-md5 (stream-info-md5 stream-info))
+                              ;; Check if expected MD5 is all zeros (means no checksum)
+                              (has-checksum? (not (every zero? (bytevector->u8-list expected-md5)))))
+                         (when (and has-checksum? computed-hash)
+                           (unless (bytevector=? computed-hash expected-md5)
+                             ((md5-mismatch-handler)
+                              (bytevector->hex-string expected-md5)
+                              (bytevector->hex-string computed-hash)))))))
                    ;; Continue decoding
                    (begin
+                     ;; Accumulate frame bytevector if MD5 verification enabled
+                     (when (and gcrypt-available? (verify-md5?))
+                       (let ((frame-data (frame-samples->bytevector)))
+                         (current-md5-bytevectors (cons frame-data (current-md5-bytevectors)))))
                      (parameterize ((current-output-port port))
                        (write-frame))
                      (loop (+ samples-written (frame-header-blocksize (current-frame-header))))))))

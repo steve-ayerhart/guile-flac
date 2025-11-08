@@ -26,6 +26,7 @@
              (flac format)
              (flac metadata)
              (flac decoder)
+             (flac)
 
              (rnrs bytevectors)
 
@@ -34,6 +35,7 @@
              (ice-9 format)
 
              (srfi srfi-1)
+             (srfi srfi-42)
              (srfi srfi-64))
 
 ;;; https://datatracker.ietf.org/doc/html/draft-ietf-cellar-flac#name-decoding-example-1
@@ -78,7 +80,28 @@
 
           (test-group "Frame"
             (test-equal "Header" expected-frame-header (current-frame-header))
-            (test-equal "Samples" expected-frame-samples (current-frame-samples)))))))))
+            (test-equal "Samples" expected-frame-samples (current-frame-samples))))))))
+
+  (when gcrypt-available?
+    (test-group "MD5 Verification"
+      (with-flac-input-port
+       (open-bytevector-input-port example-1)
+       (λ ()
+         (flac-read/assert-magic)
+         (let* ((metadata (read-flac-metadata))
+                (stream-info (find metadata-stream-info? metadata)))
+           (with-initialized-decoder
+            stream-info
+            (lambda ()
+              (read-flac-frame)
+              (let* ((sample-bytes (ceiling-quotient 16 8))
+                     (samples (list-ec (:range sample 0 1)
+                                      (:range channel 0 2)
+                                      (array-cell-ref (current-frame-samples) channel sample)))
+                     (frame-data (sint-list->bytevector samples (endianness little) sample-bytes))
+                     (computed-md5 (compute-md5-hash frame-data))
+                     (expected-md5 (stream-info-md5 stream-info)))
+                (test-equal "MD5 checksum" expected-md5 computed-md5))))))))))
 
 ;;; https://datatracker.ietf.org/doc/html/draft-ietf-cellar-flac#name-decoding-example-2
 (test-group "Example 2"
@@ -172,7 +195,38 @@
 
             (test-group "Frame 2"
               (test-equal "Header" (current-frame-header) expected-second-frame-header)
-              (test-equal "Samples" (current-frame-samples) expected-second-frame-samples)))))))))
+              (test-equal "Samples" (current-frame-samples) expected-second-frame-samples))))))))
+
+  (when gcrypt-available?
+    (test-group "MD5 Verification"
+      (with-flac-input-port
+       (open-bytevector-input-port example-2)
+       (λ ()
+         (flac-read/assert-magic)
+         (let* ((metadata (read-flac-metadata))
+                (stream-info (find metadata-stream-info? metadata)))
+           (with-initialized-decoder
+            stream-info
+            (lambda ()
+              ;; Collect samples from both frames
+              (let loop ((frames-remaining 2)
+                        (all-samples '()))
+                (if (zero? frames-remaining)
+                    ;; All frames read - compute MD5
+                    (let* ((sample-bytes (ceiling-quotient 16 8))
+                           (samples (apply append (reverse all-samples)))
+                           (frame-data (sint-list->bytevector samples (endianness little) sample-bytes))
+                           (computed-md5 (compute-md5-hash frame-data))
+                           (expected-md5 (stream-info-md5 stream-info)))
+                      (test-equal "MD5 checksum" expected-md5 computed-md5))
+                    ;; Read next frame and accumulate samples
+                    (begin
+                      (read-flac-frame)
+                      (let* ((blocksize (frame-header-blocksize (current-frame-header)))
+                             (frame-samples (list-ec (:range sample 0 blocksize)
+                                                    (:range channel 0 2)
+                                                    (array-cell-ref (current-frame-samples) channel sample))))
+                        (loop (- frames-remaining 1) (cons frame-samples all-samples))))))))))))))
 
 ;;; https://datatracker.ietf.org/doc/html/draft-ietf-cellar-flac#name-decoding-example-3
 (test-group "Example 3"
@@ -215,7 +269,28 @@
 
             (read-flac-frame)
 
-            (test-equal "Frame 1" expected-first-frame-samples (current-frame-samples)))))))))
+            (test-equal "Frame 1" expected-first-frame-samples (current-frame-samples))))))))
+
+  (when gcrypt-available?
+    (test-group "MD5 Verification"
+      (with-flac-input-port
+       (open-bytevector-input-port example-3)
+       (λ ()
+         (flac-read/assert-magic)
+         (let* ((metadata (read-flac-metadata))
+                (stream-info (find metadata-stream-info? metadata)))
+           (with-initialized-decoder
+            stream-info
+            (lambda ()
+              (read-flac-frame)
+              (let* ((sample-bytes (ceiling-quotient 8 8))
+                     (samples (list-ec (:range sample 0 24)
+                                      (:range channel 0 1)
+                                      (array-cell-ref (current-frame-samples) channel sample)))
+                     (frame-data (sint-list->bytevector samples (endianness little) sample-bytes))
+                     (computed-md5 (compute-md5-hash frame-data))
+                     (expected-md5 (stream-info-md5 stream-info)))
+                (test-equal "MD5 checksum" expected-md5 computed-md5))))))))))
 
 
 (define exit-status (test-runner-fail-count (test-runner-current)))
