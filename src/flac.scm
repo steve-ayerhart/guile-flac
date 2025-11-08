@@ -60,16 +60,17 @@
        #x80 #x00 #x00 #xaa #x00 #x38 #x9b #x71))
 
 (define (get-channel-mask num-channels)
-  "Return the channel mask for NUM-CHANNELS using standard speaker positions"
+  "Return the channel mask for NUM-CHANNELS using standard speaker positions
+  See: https://learn.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatextensible"
   (case num-channels
-    ((1) #x4)        ; SPEAKER_FRONT_CENTER
-    ((2) #x3)        ; SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+    ((1) #x4)        ; FC
+    ((2) #x3)        ; FL | FR
     ((3) #x7)        ; FL | FR | FC
-    ((4) #x33)       ; FL | FR | BL | BR
-    ((5) #x37)       ; FL | FR | FC | BL | BR
-    ((6) #x3F)       ; FL | FR | FC | LFE | BL | BR (5.1)
-    ((7) #x13F)      ; 5.1 + BC
-    ((8) #x63F)      ; 7.1
+    ((4) #x33)       ; FL | FR | BL | BR (quad)
+    ((5) #x607)      ; FL | FR | FC | SL | SR (5.0)
+    ((6) #x60F)      ; FL | FR | FC | LFE | SL | SR (5.1)
+    ((7) #x70F)      ; FL | FR | FC | LFE | BC | SL | SR (6.1)
+    ((8) #x63F)      ; FL | FR | FC | LFE | BL | BR | SL | SR (7.1)
     (else #x0)))     ; Undefined
 
 (define (build-wav-header)
@@ -141,31 +142,39 @@
                          ((<= bits-per-sample 24) 3)
                          (else 4)))
          (storage-bits (* storage-bytes 8))
-         (addend (if (= 8 bits-per-sample) 128 0))
          ;; For non-byte-aligned samples, we need to left-align in the container
          ;; e.g., 12-bit samples in 16-bit container: shift left by 4
          (shift-amount (- storage-bits bits-per-sample))
          (data-bv (make-bytevector storage-bytes))
-         ;; Calculate valid range based on ACTUAL bit depth, not storage size
-         (max-val (- (expt 2 (- bits-per-sample 1)) 1))
-         (min-val (- (expt 2 (- bits-per-sample 1)))))
+         ;; Calculate valid range based on ACTUAL bit depth
+         ;; For 8-bit, samples are unsigned (0-255) in WAV, but signed in FLAC
+         (max-val (if (= 8 bits-per-sample)
+                     255
+                     (- (expt 2 (- bits-per-sample 1)) 1)))
+         (min-val (if (= 8 bits-per-sample)
+                     0
+                     (- (expt 2 (- bits-per-sample 1))))))
     ;; WAV format requires interleaved samples: ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...
     ;; So we loop over samples first, then channels within each sample
     (do-ec (:range sample 0 (frame-header-blocksize (current-frame-header)))
            (do-ec (:range channel 0 (stream-info-channels (current-stream-info)))
                   (let* ((val (array-cell-ref (current-frame-samples) channel sample))
-                         (adjusted-val (+ addend val))
+                         ;; Convert 8-bit from signed to unsigned by adding 128
+                         (adjusted-val (if (= 8 bits-per-sample) (+ val 128) val))
                          ;; Left-align the sample in its container
                          (final-val (bitwise-arithmetic-shift-left adjusted-val shift-amount)))
                     (when (or (< adjusted-val min-val) (> adjusted-val max-val))
                       (format (current-error-port) "ERROR: Sample out of range!\n")
                       (format (current-error-port) "Channel ~a, Sample ~a\n" channel sample)
                       (format (current-error-port) "Raw value: ~a\n" val)
-                      (format (current-error-port) "With addend (~a): ~a\n" addend adjusted-val)
+                      (format (current-error-port) "After adjustment: ~a\n" adjusted-val)
                       (format (current-error-port) "Bits per sample: ~a (range: ~a to ~a)\n" bits-per-sample min-val max-val)
                       (format (current-error-port) "Frame header: ~s\n" (current-frame-header))
                       (error "Sample value out of range"))
-                    (bytevector-sint-set! data-bv 0 final-val (endianness little) storage-bytes)
+                    ;; Use unsigned write for 8-bit, signed for everything else
+                    (if (= 8 bits-per-sample)
+                        (bytevector-u8-set! data-bv 0 final-val)
+                        (bytevector-sint-set! data-bv 0 final-val (endianness little) storage-bytes))
                     (put-bytevector (current-output-port) data-bv))))))
 
 (define (with-flac-file-decoder infile thunk)
