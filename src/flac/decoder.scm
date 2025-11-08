@@ -138,6 +138,19 @@
                   (result (+ residual prediction)))
              (array-cell-set! (current-frame-samples) result channel i)))))
 
+;;; RFC 9639 Section 9.2.2: Apply wasted bits by left-shifting samples
+;;; "A decoder MUST add k least-significant zero bits by shifting left (padding)
+;;;  after decoding a subframe sample."
+(define (apply-wasted-bits-to-channel channel blocksize wasted-bits)
+  "Shift all samples in CHANNEL left by WASTED-BITS positions to restore original bit depth"
+  (when (> wasted-bits 0)
+    (do-ec (:range i 0 blocksize)
+           (array-cell-set! (current-frame-samples)
+                           (bitwise-arithmetic-shift-left
+                            (array-cell-ref (current-frame-samples) channel i)
+                            wasted-bits)
+                           channel i))))
+
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-coded-residual
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#coded-residual
 (define (read-residual-partitioned-rice channel blocksize predictor-order)
@@ -227,21 +240,24 @@
                         (frame-header-channel-assignment (current-frame-header))
                         channel))
          (blocksize (frame-header-blocksize (current-frame-header))))
+    ;; Decode the subframe (samples at reduced bit depth)
     (match (subframe-header-subframe-type (current-subframe-header))
-      ('constant (read-subframe-constant channel blocksize sample-depth wasted-bits))
-      ('verbatim (read-subframe-verbatim channel blocksize sample-depth wasted-bits))
+      ('constant (read-subframe-constant channel blocksize sample-depth))
+      ('verbatim (read-subframe-verbatim channel blocksize sample-depth))
       ('fixed (read-subframe-fixed channel predictor-order blocksize sample-depth))
-      ('lpc (read-subframe-lpc channel predictor-order blocksize sample-depth)))))
+      ('lpc (read-subframe-lpc channel predictor-order blocksize sample-depth)))
+    ;; Apply wasted bits to restore full bit depth (all subframe types)
+    (apply-wasted-bits-to-channel channel blocksize wasted-bits)))
 
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.1.1
-(define (read-subframe-verbatim channel blocksize sample-depth wasted-bits)
+(define (read-subframe-verbatim channel blocksize sample-depth)
   (do-ec (:range block 0 blocksize)
-         (array-cell-set! (current-frame-samples) (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits) channel block)))
+         (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel block)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#section-5.3-2.2.1
-(define (read-subframe-constant channel blocksize sample-depth wasted-bits)
-  (let ((sample (bitwise-arithmetic-shift (flac-read-sint sample-depth) wasted-bits)))
+(define (read-subframe-constant channel blocksize sample-depth)
+  (let ((sample (flac-read-sint sample-depth)))
     (do-ec (:range block 0 blocksize)
            (array-cell-set! (current-frame-samples) sample channel block))))
 
