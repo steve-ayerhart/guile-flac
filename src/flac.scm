@@ -217,13 +217,50 @@
              thing))))))
 
 (define (decode-flac-file infile outfile)
-  (let ((old-output (current-output-port)))
-    (with-flac-file-decoder
-     infile
-     (lambda ()
-       (let ((wav-header (build-wav-header)))
-         (with-output-to-file outfile
-           (lambda ()
-             (put-bytevector (current-output-port) (bytestructure-unwrap wav-header))
-             (while (not (eof-object? (read-flac-frame)))
-               (write-frame)))))))))
+  (with-flac-file-decoder
+   infile
+   (lambda ()
+     (let* ((stream-info (current-stream-info))
+            (total-samples-unknown? (= 0 (stream-info-samples stream-info)))
+            (wav-header (build-wav-header))
+            ;; Open output file in read-write mode so we can seek back to update header
+            (port (open-file outfile "wb+")))
+       (catch #t
+         (lambda ()
+           ;; Write initial header (may have size=0 if samples unknown)
+           (put-bytevector port (bytestructure-unwrap wav-header))
+
+           ;; Decode all frames, counting samples if needed
+           (let loop ((samples-written 0))
+             (let ((frame (read-flac-frame)))
+               (if (eof-object? frame)
+                   ;; Done decoding - update header if samples were unknown
+                   (when total-samples-unknown?
+                     (let* ((channels (stream-info-channels stream-info))
+                            (bits-per-sample (stream-info-bits-per-sample stream-info))
+                            (storage-bytes (cond
+                                            ((<= bits-per-sample 8) 1)
+                                            ((<= bits-per-sample 16) 2)
+                                            ((<= bits-per-sample 24) 3)
+                                            (else 4)))
+                            (data-size (* samples-written channels storage-bytes))
+                            (use-extensible? (or (> channels 2)
+                                                (not (= bits-per-sample (* storage-bytes 8)))
+                                                (= bits-per-sample 24)))
+                            (header-overhead (if use-extensible? 60 36))
+                            (file-size (+ header-overhead data-size)))
+                       ;; Seek back to beginning and rewrite header with correct sizes
+                       (seek port 0 SEEK_SET)
+                       ;; Update the bytestructure with actual sizes
+                       (bytestructure-set! wav-header 'filesize file-size)
+                       (bytestructure-set! wav-header 'data-chunk-size data-size)
+                       (put-bytevector port (bytestructure-unwrap wav-header))))
+                   ;; Continue decoding
+                   (begin
+                     (parameterize ((current-output-port port))
+                       (write-frame))
+                     (loop (+ samples-written (frame-header-blocksize (current-frame-header))))))))
+           (close-port port))
+         (lambda (key . args)
+           (close-port port)
+           (apply throw key args)))))))
