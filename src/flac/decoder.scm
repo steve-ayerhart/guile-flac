@@ -240,13 +240,11 @@
                         (frame-header-channel-assignment (current-frame-header))
                         channel))
          (blocksize (frame-header-blocksize (current-frame-header))))
-    ;; Decode the subframe (samples at reduced bit depth)
     (match (subframe-header-subframe-type (current-subframe-header))
       ('constant (read-subframe-constant channel blocksize sample-depth))
       ('verbatim (read-subframe-verbatim channel blocksize sample-depth))
       ('fixed (read-subframe-fixed channel predictor-order blocksize sample-depth))
       ('lpc (read-subframe-lpc channel predictor-order blocksize sample-depth)))
-    ;; Apply wasted bits to restore full bit depth (all subframe types)
     (apply-wasted-bits-to-channel channel blocksize wasted-bits)))
 
 
@@ -269,7 +267,7 @@
            (array-cell-set! (current-frame-samples) (flac-read-sint sample-depth) channel po))
     ;; residuals
     (read-residual-partitioned-rice channel blocksize predictor-order)
-    ;; Coefficients need to be reversed to apply to most recent samples first
+    ;; coefficients need to be reversed to apply to most recent samples first
     (restore-linear-prediction channel (reverse (list-ref fixed-coefficients predictor-order)) predictor-order 0)))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-linear-predictor-subframe

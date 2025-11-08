@@ -281,18 +281,51 @@
            (begin
              (frame-loop (+ frame-number 1) (read-flac-frame))))))))
 
-(define (decode-flac-file infile outfile)
-  (with-flac-file-decoder
-   infile
-   (lambda ()
-     (let* ((stream-info (current-stream-info))
-            (total-samples-unknown? (= 0 (stream-info-samples stream-info)))
-            (wav-header (build-wav-header))
-            ;; Open output file in read-write mode so we can seek back to update header
-            (port (open-file outfile "wb+")))
-       ;; Initialize MD5 bytevector list if verification is enabled
-       (when (and gcrypt-available? (verify-md5?))
-         (current-md5-bytevectors '()))
+(define* (decode-flac-file infile outfile #:key (verify-md5 #f) (md5-on-error 'warn))
+  "Decode INFILE (FLAC) to OUTFILE (WAV).
+
+Optional keyword arguments:
+  #:verify-md5 - Enable MD5 verification (default: #f)
+                 #t: verify if gcrypt available (warn if not)
+                 #f: don't verify
+  #:md5-on-error - Action on MD5 mismatch (default: 'warn)
+                   'warn: print warning to stderr
+                   'error: throw error"
+
+  ;; Determine if we should verify MD5
+  (let ((should-verify? (and verify-md5
+                             (if gcrypt-available?
+                                 #t
+                                 (begin
+                                   (format (current-error-port)
+                                           "WARNING: MD5 verification requested but guile-gcrypt not available~%")
+                                   #f)))))
+
+    ;; Set up MD5 error handler
+    (let ((error-handler (cond
+                          ((eq? md5-on-error 'warn)
+                           (lambda (expected computed)
+                             (format (current-error-port) "WARNING: MD5 checksum mismatch!~%")
+                             (format (current-error-port) "Expected: ~a~%Computed: ~a~%" expected computed)))
+                          ((eq? md5-on-error 'error)
+                           (lambda (expected computed)
+                             (error "MD5 checksum mismatch"
+                                    (format #f "Expected: ~a~%Computed: ~a" expected computed))))
+                          (else (error "Invalid md5-on-error value" md5-on-error)))))
+
+      (parameterize ((verify-md5? should-verify?)
+                     (md5-mismatch-handler error-handler))
+        (with-flac-file-decoder
+         infile
+         (lambda ()
+           (let* ((stream-info (current-stream-info))
+                  (total-samples-unknown? (= 0 (stream-info-samples stream-info)))
+                  (wav-header (build-wav-header))
+                  ;; Open output file in read-write mode so we can seek back to update header
+                  (port (open-file outfile "wb+")))
+             ;; Initialize MD5 bytevector list if verification is enabled
+             (when (and gcrypt-available? (verify-md5?))
+               (current-md5-bytevectors '()))
        (catch #t
          (lambda ()
            ;; Write initial header (may have size=0 if samples unknown)
@@ -353,4 +386,4 @@
            (close-port port))
          (lambda (key . args)
            (close-port port)
-           (apply throw key args)))))))
+           (apply throw key args))))))))))

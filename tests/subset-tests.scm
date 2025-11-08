@@ -85,8 +85,8 @@
     (test-assert (format #f "Decode ~a" filename)
       (catch #t
         (lambda ()
-          ;; Decode with our implementation
-          (decode-flac-file input-path guile-output)
+          ;; Decode with our implementation (with MD5 verification)
+          (decode-flac-file input-path guile-output #:verify-md5 #t #:md5-on-error 'error)
 
           ;; Decode with reference implementation
           (unless (decode-with-reference-flac input-path ref-output)
