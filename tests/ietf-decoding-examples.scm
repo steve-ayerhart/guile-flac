@@ -55,10 +55,16 @@
      #vu8(62 132 180 24 7 220 105 3 7 88 106 61 173 26 46 15)))
 
   (define expected-frame-header
-    (%make-frame-header 'fixed 1 44100 'independent 16 0 191))
+    '((blocking-strategy . fixed)
+      (blocksize . 1)
+      (sample-rate . 44100)
+      (channel-assignment . independent)
+      (bits-per-sample . 16)
+      (frame/sample-number . 0)
+      (crc . 191)))
 
   (define expected-frame-footer
-    (%make-frame-footer 43674))
+    '((crc . 43674)))
 
   (define expected-frame-samples
     (array-cell-set! (array-cell-set! (make-array 0 2 4096) #(25588) 0) #(10416) 1))
@@ -144,24 +150,36 @@
      (list (%make-metadata-seek-point 0 0 16))))
 
   (define expected-first-frame-header
-    (%make-frame-header 'fixed 16 44100 'right 16 0 153))
+    '((blocking-strategy . fixed)
+      (blocksize . 16)
+      (sample-rate . 44100)
+      (channel-assignment . right)
+      (bits-per-sample . 16)
+      (frame/sample-number . 0)
+      (crc . 153)))
 
   (define expected-first-frame-samples
     #2((10372 18041 14942 17876 15627 17899 16242 18077 16824 18263 17295 -14418 -15201 -14508 -15195 -14818)
        (6070 10545 8743 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653)))
 
   (define expected-first-frame-footer
-    (%make-frame-footer 47120))
+    '((crc . 47120)))
 
   (define expected-second-frame-header
-    (%make-frame-header 'fixed 3 44100 'independent 16 1 164))
+    '((blocking-strategy . fixed)
+      (blocksize . 3)
+      (sample-rate . 44100)
+      (channel-assignment . independent)
+      (bits-per-sample . 16)
+      (frame/sample-number . 1)
+      (crc . 164)))
 
   (define expected-second-frame-samples
     #2((-15486 -15349 -16054 17876 15627 17899 16242 18077 16824 18263 17295 -14418 -15201 -14508 -15195 -14818)
        (-9072 -8958 -9410 10449 9143 10463 9502 10569 9840 10680 10113 -8428 -8895 -8476 -8896 -8653)))
 
   (define expected-second-frame-footer
-    (%make-frame-footer 4912))
+    '((crc . 4912)))
 
   (with-flac-input-port
    (open-bytevector-input-port example-2)
@@ -222,7 +240,7 @@
                     ;; Read next frame and accumulate samples
                     (begin
                       (read-flac-frame)
-                      (let* ((blocksize (frame-header-blocksize (current-frame-header)))
+                      (let* ((blocksize (assoc-ref (current-frame-header) 'blocksize))
                              (frame-samples (list-ec (:range sample 0 blocksize)
                                                     (:range channel 0 2)
                                                     (array-cell-ref (current-frame-samples) channel sample))))
@@ -244,10 +262,16 @@
      #vu8(248 249 227 150 245 203 207 198 220 128 127 153 119 144 107 50)))
 
   (define expected-first-frame-header
-    (%make-frame-header 'fixed 24 32000 'independent 8 0 233))
+    '((blocking-strategy . fixed)
+      (blocksize . 24)
+      (sample-rate . 32000)
+      (channel-assignment . independent)
+      (bits-per-sample . 8)
+      (frame/sample-number . 0)
+      (crc . 233)))
 
   (define expected-first-frame-footer
-    (%make-frame-footer 22435))
+    '((crc . 22435)))
 
   (define expected-first-frame-samples
     (array-cell-set! (make-array 0 1 4096) #(0 79 111 78 8 -61 -90 -68 -13 42 67 53 13 -27 -46 -38 -12 14 24 19 6 -4 -5) 0))

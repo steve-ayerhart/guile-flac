@@ -129,7 +129,7 @@
   (values (case (flac-read-uint 2) [(#b00) 'rice] [(#b01) 'rice2]) (flac-read-uint 4)))
 
 (define (restore-linear-prediction channel coefficients order shift)
-  (let ((blocksize (frame-header-blocksize (current-frame-header))))
+  (let ((blocksize (assoc-ref (current-frame-header) 'blocksize)))
     (do-ec (: i order blocksize)
            (let* ((residual (array-cell-ref (current-frame-samples) channel i))
                   (prediction-sum (sum-ec (: c (index j) coefficients)
@@ -213,7 +213,7 @@
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-interchannel-decorrelation
 (define (stereo-decorrelation channel-assignment)
-  (let ((blocksize (frame-header-blocksize (current-frame-header))))
+  (let ((blocksize (assoc-ref (current-frame-header) 'blocksize)))
     (match channel-assignment
       ('independent #t) ; do nothing
       ('left (stereo-decorrelate-left blocksize))
@@ -225,22 +225,23 @@
   (read/assert-subframe-sync)
   (receive (order type)
       (read-subframe-type)
-    (set-subframe-header-subframe-type! (current-subframe-header) type)
-    (set-subframe-header-predictor-order! (current-subframe-header) order)
-    (set-subframe-header-wasted-bits! (current-subframe-header) (read-subframe-wasted-bits))))
+    (current-subframe-header
+      `((subframe-type . ,type)
+        (predictor-order . ,order)
+        (wasted-bits . ,(read-subframe-wasted-bits))))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-subframes
 (define (read-subframe channel)
   (read-subframe-header)
-  (let* ((wasted-bits (subframe-header-wasted-bits (current-subframe-header)))
-         (predictor-order (subframe-header-predictor-order (current-subframe-header)))
+  (let* ((wasted-bits (assoc-ref (current-subframe-header) 'wasted-bits))
+         (predictor-order (assoc-ref (current-subframe-header) 'predictor-order))
          (sample-depth (calculate-sample-depth
-                        (frame-header-bits-per-sample (current-frame-header))
+                        (assoc-ref (current-frame-header) 'bits-per-sample)
                         wasted-bits
-                        (frame-header-channel-assignment (current-frame-header))
+                        (assoc-ref (current-frame-header) 'channel-assignment)
                         channel))
-         (blocksize (frame-header-blocksize (current-frame-header))))
-    (match (subframe-header-subframe-type (current-subframe-header))
+         (blocksize (assoc-ref (current-frame-header) 'blocksize)))
+    (match (assoc-ref (current-subframe-header) 'subframe-type)
       ('constant (read-subframe-constant channel blocksize sample-depth))
       ('verbatim (read-subframe-verbatim channel blocksize sample-depth))
       ('fixed (read-subframe-fixed channel predictor-order blocksize sample-depth))
@@ -286,23 +287,24 @@
 
 (define (read-subframes)
   (let ((channels (stream-info-channels (current-stream-info)))
-        (channel-assignment (frame-header-channel-assignment (current-frame-header))))
+        (channel-assignment (assoc-ref (current-frame-header) 'channel-assignment)))
     (do ((channel 0 (1+ channel)))
         ((>= channel channels))
       (read-subframe channel))))
 
 ;;; TODO: actually verify the checksum
 (define (read-frame-footer)
-  (set-frame-footer-crc! (current-frame-footer) (flac-read-uint 16)))
+  (current-frame-footer `((crc . ,(flac-read-uint 16)))))
 
 (define (set-current-frame-header-fields! blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
-  (set-frame-header-blocking-strategy! (current-frame-header) blocking-strategy)
-  (set-frame-header-blocksize! (current-frame-header) blocksize)
-  (set-frame-header-sample-rate! (current-frame-header) sample-rate)
-  (set-frame-header-channel-assignment! (current-frame-header) channel-assignment)
-  (set-frame-header-bits-per-sample! (current-frame-header) bits-per-sample)
-  (set-frame-header-frame/sample-number! (current-frame-header) frame/sample-number)
-  (set-frame-header-crc! (current-frame-header) crc))
+  (current-frame-header
+    `((blocking-strategy . ,blocking-strategy)
+      (blocksize . ,blocksize)
+      (sample-rate . ,sample-rate)
+      (channel-assignment . ,channel-assignment)
+      (bits-per-sample . ,bits-per-sample)
+      (frame/sample-number . ,frame/sample-number)
+      (crc . ,crc))))
 
 ;;; https://www.ietf.org/archive/id/draft-ietf-cellar-flac-07.html#name-frame-header
 (define-public (read-frame-header)
@@ -323,7 +325,7 @@
 (define (read-frame)
   (read-frame-header)
   (read-subframes)
-  (stereo-decorrelation (frame-header-channel-assignment (current-frame-header)))
+  (stereo-decorrelation (assoc-ref (current-frame-header) 'channel-assignment))
   (align-to-byte)
   (read-frame-footer))
 
@@ -338,9 +340,9 @@
          (channels-array (make-array 0 channels max-block-samples)))
 
     (parameterize ((current-stream-info stream-info)
-                   (current-frame-header (%make-frame-header #f #f #f #f #f #f #f))
-                   (current-subframe-header (%make-subframe-header #f #f #f))
-                   (current-frame-footer (%make-frame-footer #f))
+                   (current-frame-header (make-frame-header-alist))
+                   (current-subframe-header (make-subframe-header-alist))
+                   (current-frame-footer (make-frame-footer-alist))
                    (current-frame-samples channels-array))
       (thunk))))
 

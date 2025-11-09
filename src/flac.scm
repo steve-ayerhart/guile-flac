@@ -78,8 +78,8 @@
 ;; FLAC spec: MD5 of interleaved signed little-endian PCM samples
 (define (frame-samples->bytevector)
   (let* ((channels (stream-info-channels (current-stream-info)))
-         (blocksize (frame-header-blocksize (current-frame-header)))
-         (bits-per-sample (frame-header-bits-per-sample (current-frame-header)))
+         (blocksize (assoc-ref (current-frame-header) 'blocksize))
+         (bits-per-sample (assoc-ref (current-frame-header) 'bits-per-sample))
          (sample-bytes (ceiling-quotient bits-per-sample 8))
          (samples (list-ec (:range sample 0 blocksize)
                           (:range channel 0 channels)
@@ -204,7 +204,7 @@
            (data-chunk-size ,data-size))))))
 
 (define (write-frame)
-  (let* ((bits-per-sample (frame-header-bits-per-sample (current-frame-header)))
+  (let* ((bits-per-sample (assoc-ref (current-frame-header) 'bits-per-sample))
          ;; Round up to next byte boundary for storage (12->16, 20->24, etc.)
          (storage-bytes (cond
                          ((<= bits-per-sample 8) 1)
@@ -226,7 +226,7 @@
                      (- (expt 2 (- bits-per-sample 1))))))
     ;; WAV format requires interleaved samples: ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...
     ;; So we loop over samples first, then channels within each sample
-    (do-ec (:range sample 0 (frame-header-blocksize (current-frame-header)))
+    (do-ec (:range sample 0 (assoc-ref (current-frame-header) 'blocksize))
            (do-ec (:range channel 0 (stream-info-channels (current-stream-info)))
                   (let* ((val (array-cell-ref (current-frame-samples) channel sample))
                          ;; Convert 8-bit from signed to unsigned by adding 128
@@ -382,7 +382,7 @@ Optional keyword arguments:
                          (current-md5-bytevectors (cons frame-data (current-md5-bytevectors)))))
                      (parameterize ((current-output-port port))
                        (write-frame))
-                     (loop (+ samples-written (frame-header-blocksize (current-frame-header))))))))
+                     (loop (+ samples-written (assoc-ref (current-frame-header) 'blocksize)))))))
            (close-port port))
          (lambda (key . args)
            (close-port port)

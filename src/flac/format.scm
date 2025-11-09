@@ -13,23 +13,9 @@
             flac-subframe-type
             flac-entropy-coding-method-type
 
-            %make-frame-header
-            frame-header-blocking-strategy set-frame-header-blocking-strategy!
-            frame-header-blocksize set-frame-header-blocksize!
-            frame-header-sample-rate set-frame-header-sample-rate!
-            frame-header-channel-assignment set-frame-header-channel-assignment!
-            frame-header-bits-per-sample set-frame-header-bits-per-sample!
-            frame-header-frame/sample-number set-frame-header-frame/sample-number!
-            frame-header-crc set-frame-header-crc!
-
-            %make-subframe-header
-            subframe-header-subframe-type set-subframe-header-subframe-type!
-            subframe-header-predictor-order set-subframe-header-predictor-order!
-            subframe-header-wasted-bits set-subframe-header-wasted-bits!
-
-            %make-frame-footer
-            frame-footer-crc
-            set-frame-footer-crc!
+            make-frame-header-alist
+            make-subframe-header-alist
+            make-frame-footer-alist
 
             %make-metadata-padding metadata-padding?
             padding-length
@@ -83,12 +69,11 @@
 (define flac-entropy-coding-method-type
   (make-enumeration '(rice rice2)))
 
-(define-record-type <subframe-header>
-  (%make-subframe-header subframe-type predictor-order wasted-bits)
-  subframe-header?
-  (subframe-type subframe-header-subframe-type set-subframe-header-subframe-type!)
-  (predictor-order subframe-header-predictor-order set-subframe-header-predictor-order!)
-  (wasted-bits subframe-header-wasted-bits set-subframe-header-wasted-bits!))
+(define (make-subframe-header-alist)
+  "Create an association list for subframe header data."
+  '((subframe-type . #f)
+    (predictor-order . #f)
+    (wasted-bits . #f)))
 
 (define-record-type <subframe>
   (%make-subframe header data)
@@ -96,21 +81,19 @@
   (header subframe-header)
   (data subframe-data))
 
-(define-record-type <frame-header>
-  (%make-frame-header blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)
-  frame-header?
-  (blocking-strategy frame-header-blocking-strategy set-frame-header-blocking-strategy!)
-  (blocksize frame-header-blocksize set-frame-header-blocksize!)
-  (sample-rate frame-header-sample-rate set-frame-header-sample-rate!)
-  (channel-assignment frame-header-channel-assignment set-frame-header-channel-assignment!)
-  (bits-per-sample frame-header-bits-per-sample set-frame-header-bits-per-sample!)
-  (frame/sample-number frame-header-frame/sample-number set-frame-header-frame/sample-number!)
-  (crc frame-header-crc set-frame-header-crc!))
+(define (make-frame-header-alist)
+  "Create an association list for frame header data."
+  '((blocking-strategy . #f)
+    (blocksize . #f)
+    (sample-rate . #f)
+    (channel-assignment . #f)
+    (bits-per-sample . #f)
+    (frame/sample-number . #f)
+    (crc . #f)))
 
-(define-record-type <frame-footer>
-  (%make-frame-footer crc)
-  frame-footer?
-  (crc frame-footer-crc set-frame-footer-crc!))
+(define (make-frame-footer-alist)
+  "Create an association list for frame footer data."
+  '((crc . #f)))
 
 (define flac-metadata-type
   (make-enumeration '(stream-info
