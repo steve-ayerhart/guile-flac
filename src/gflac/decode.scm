@@ -72,33 +72,28 @@ Examples:
                       (continue-on-error? #f))
   "Decode a single FLAC file."
   (let ((output-file (output-filename input-file output-name)))
-
-    ;; Check if output exists and not forcing
     (when (and (not test?) (file-exists-and-not-force? output-file force?))
       (format (current-error-port) "Error: ~a already exists (use -f to overwrite)~%" output-file)
       (exit 1))
 
-    ;; Print status unless silent
     (unless silent?
       (format #t "~a: ~a -> ~a~%"
               (if test? "Testing" "Decoding")
               input-file
               (if test? "(no output)" output-file)))
 
-    ;; Perform decode
     (catch #t
       (lambda ()
         (if test?
-            ;; Test mode: decode but don't write, always verify
             (with-flac-file-decoder input-file
-              (lambda ()
-                (let loop ((frame (read-flac-frame)))
-                  (unless (eof-object? frame)
-                    (loop (read-flac-frame))))))
-            ;; Normal decode
+                                    (lambda ()
+                                      (let loop ((frame (read-flac-frame)))
+                                        (unless (eof-object? frame)
+                                          (loop (read-flac-frame))))))
+
             (decode-flac-file input-file output-file
-                             #:verify-md5 verify?
-                             #:md5-on-error (if continue-on-error? 'warn 'error)))
+                              #:verify-md5 verify?
+                              #:md5-on-error (if continue-on-error? 'warn 'error)))
 
         (unless silent?
           (format #t "~a: done~%" input-file))
@@ -126,38 +121,32 @@ Examples:
          (continue-on-error? (option-ref options 'decode-through-errors #f))
          (files (option-ref options '() '())))
 
-    ;; Show help if requested
     (when help?
       (show-decode-help)
       (exit 0))
 
-    ;; Check for files
     (when (null? files)
       (format (current-error-port) "Error: no input files specified~%")
       (show-decode-help)
       (exit 1))
 
-    ;; Check that -o is only used with single file
     (when (and output-name (> (length files) 1))
       (format (current-error-port) "Error: -o/--output-name can only be used with a single input file~%")
       (exit 1))
 
-    ;; Redirect output if totally-silent
     (when totally-silent?
       (set-current-output-port (open-output-file "/dev/null"))
       (set-current-error-port (open-output-file "/dev/null")))
 
-    ;; Decode all files
     (let ((results (map (lambda (file)
                           (decode-file file
-                                      #:output-name output-name
-                                      #:force? force?
-                                      #:test? test?
-                                      #:silent? (or silent? totally-silent?)
-                                      #:verify? verify?
-                                      #:continue-on-error? continue-on-error?))
+                                       #:output-name output-name
+                                       #:force? force?
+                                       #:test? test?
+                                       #:silent? (or silent? totally-silent?)
+                                       #:verify? verify?
+                                       #:continue-on-error? continue-on-error?))
                         files)))
 
-      ;; Exit with error if any failed and not continue-on-error
       (when (and (not continue-on-error?) (any not results))
         (exit 1)))))
