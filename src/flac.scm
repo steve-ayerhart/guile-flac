@@ -10,7 +10,8 @@
 
   #:use-module (bytestructures guile)
   #:use-module (rnrs bytevectors)
-  #:use-module (scheme base)
+  #:use-module ((scheme base)
+                #:select (bytevector-append))
   #:use-module (ice-9 binary-ports)
   #:use-module (ice-9 format)
 
@@ -42,7 +43,7 @@
     (for-each
      (lambda (sym)
        (module-define! (current-module) sym
-                      (module-ref gcrypt-hash sym)))
+                       (module-ref gcrypt-hash sym)))
      hash-syms)))
 
 ;; Parameter for MD5 accumulation - stores list of bytevectors for all frames
@@ -82,8 +83,8 @@
          (bits-per-sample (assoc-ref (current-frame-header) 'bits-per-sample))
          (sample-bytes (ceiling-quotient bits-per-sample 8))
          (samples (list-ec (:range sample 0 blocksize)
-                          (:range channel 0 channels)
-                          (array-cell-ref (current-frame-samples) channel sample))))
+                           (:range channel 0 channels)
+                           (array-cell-ref (current-frame-samples) channel sample))))
     (sint-list->bytevector samples (endianness little) sample-bytes)))
 
 ;; Standard PCM WAV header
@@ -125,7 +126,7 @@
 ;; PCM SubFormat GUID: {00000001-0000-0010-8000-00aa00389b71}
 (define pcm-subformat-guid
   #vu8(#x01 #x00 #x00 #x00 #x00 #x00 #x10 #x00
-       #x80 #x00 #x00 #xaa #x00 #x38 #x9b #x71))
+            #x80 #x00 #x00 #xaa #x00 #x38 #x9b #x71))
 
 (define (get-channel-mask num-channels)
   "Return the channel mask for NUM-CHANNELS using standard speaker positions
@@ -163,8 +164,8 @@
          ;; - Bits per sample differs from storage (e.g., 12-bit in 16-bit, 20-bit in 24-bit), OR
          ;; - 24-bit samples (standard practice for 24-bit files)
          (use-extensible? (or (> num-channels 2)
-                             (not (= bits-per-sample storage-bits))
-                             (= bits-per-sample 24))))
+                              (not (= bits-per-sample storage-bits))
+                              (= bits-per-sample 24))))
     (if use-extensible?
         ;; WAVE_FORMAT_EXTENSIBLE
         (bytestructure
@@ -219,11 +220,11 @@
          ;; Calculate valid range based on ACTUAL bit depth
          ;; For 8-bit, samples are unsigned (0-255) in WAV, but signed in FLAC
          (max-val (if (= 8 bits-per-sample)
-                     255
-                     (- (expt 2 (- bits-per-sample 1)) 1)))
+                      255
+                      (- (expt 2 (- bits-per-sample 1)) 1)))
          (min-val (if (= 8 bits-per-sample)
-                     0
-                     (- (expt 2 (- bits-per-sample 1))))))
+                      0
+                      (- (expt 2 (- bits-per-sample 1))))))
     ;; WAV format requires interleaved samples: ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...
     ;; So we loop over samples first, then channels within each sample
     (do-ec (:range sample 0 (assoc-ref (current-frame-header) 'blocksize))
@@ -326,64 +327,64 @@ Optional keyword arguments:
              ;; Initialize MD5 bytevector list if verification is enabled
              (when (and gcrypt-available? (verify-md5?))
                (current-md5-bytevectors '()))
-       (catch #t
-         (lambda ()
-           ;; Write initial header (may have size=0 if samples unknown)
-           (put-bytevector port (bytestructure-unwrap wav-header))
+             (catch #t
+               (lambda ()
+                 ;; Write initial header (may have size=0 if samples unknown)
+                 (put-bytevector port (bytestructure-unwrap wav-header))
 
-           ;; Decode all frames, counting samples if needed
-           (let loop ((samples-written 0))
-             (let ((frame (read-flac-frame)))
-               (if (eof-object? frame)
-                   ;; Done decoding
-                   (let* ((channels (stream-info-channels stream-info))
-                          (bits-per-sample (stream-info-bits-per-sample stream-info))
-                          (storage-bytes (cond
-                                          ((<= bits-per-sample 8) 1)
-                                          ((<= bits-per-sample 16) 2)
-                                          ((<= bits-per-sample 24) 3)
-                                          (else 4)))
-                          (final-samples (if total-samples-unknown? samples-written (stream-info-samples stream-info)))
-                          (data-size (* final-samples channels storage-bytes))
-                          (padding-size (if (odd? data-size) 1 0)))
-                     ;; Write padding byte if data size is odd (RIFF word alignment)
-                     (when (= padding-size 1)
-                       (put-u8 port 0))
-                     ;; Update header if samples were unknown
-                     (when total-samples-unknown?
-                       (let* ((use-extensible? (or (> channels 2)
-                                                  (not (= bits-per-sample (* storage-bytes 8)))
-                                                  (= bits-per-sample 24)))
-                              (header-overhead (if use-extensible? 60 36))
-                              (file-size (+ header-overhead data-size padding-size)))
-                         ;; Seek back to beginning and rewrite header with correct sizes
-                         (seek port 0 SEEK_SET)
-                         ;; Update the bytestructure with actual sizes
-                         (bytestructure-set! wav-header 'filesize file-size)
-                         (bytestructure-set! wav-header 'data-chunk-size data-size)
-                         (put-bytevector port (bytestructure-unwrap wav-header))))
-                     ;; Verify MD5 if enabled
-                     (when (and gcrypt-available? (verify-md5?) (current-md5-bytevectors))
-                       (let* ((all-samples (apply bytevector-append (reverse (current-md5-bytevectors))))
-                              (computed-hash (compute-md5-hash all-samples))
-                              (expected-md5 (stream-info-md5 stream-info))
-                              ;; Check if expected MD5 is all zeros (means no checksum)
-                              (has-checksum? (not (every zero? (bytevector->u8-list expected-md5)))))
-                         (when (and has-checksum? computed-hash)
-                           (unless (bytevector=? computed-hash expected-md5)
-                             ((md5-mismatch-handler)
-                              (bytevector->hex-string expected-md5)
-                              (bytevector->hex-string computed-hash)))))))
-                   ;; Continue decoding
-                   (begin
-                     ;; Accumulate frame bytevector if MD5 verification enabled
-                     (when (and gcrypt-available? (verify-md5?))
-                       (let ((frame-data (frame-samples->bytevector)))
-                         (current-md5-bytevectors (cons frame-data (current-md5-bytevectors)))))
-                     (parameterize ((current-output-port port))
-                       (write-frame))
-                     (loop (+ samples-written (assoc-ref (current-frame-header) 'blocksize)))))))
-           (close-port port))
-         (lambda (key . args)
-           (close-port port)
-           (apply throw key args))))))))))
+                 ;; Decode all frames, counting samples if needed
+                 (let loop ((samples-written 0))
+                   (let ((frame (read-flac-frame)))
+                     (if (eof-object? frame)
+                         ;; Done decoding
+                         (let* ((channels (stream-info-channels stream-info))
+                                (bits-per-sample (stream-info-bits-per-sample stream-info))
+                                (storage-bytes (cond
+                                                ((<= bits-per-sample 8) 1)
+                                                ((<= bits-per-sample 16) 2)
+                                                ((<= bits-per-sample 24) 3)
+                                                (else 4)))
+                                (final-samples (if total-samples-unknown? samples-written (stream-info-samples stream-info)))
+                                (data-size (* final-samples channels storage-bytes))
+                                (padding-size (if (odd? data-size) 1 0)))
+                           ;; Write padding byte if data size is odd (RIFF word alignment)
+                           (when (= padding-size 1)
+                             (put-u8 port 0))
+                           ;; Update header if samples were unknown
+                           (when total-samples-unknown?
+                             (let* ((use-extensible? (or (> channels 2)
+                                                         (not (= bits-per-sample (* storage-bytes 8)))
+                                                         (= bits-per-sample 24)))
+                                    (header-overhead (if use-extensible? 60 36))
+                                    (file-size (+ header-overhead data-size padding-size)))
+                               ;; Seek back to beginning and rewrite header with correct sizes
+                               (seek port 0 SEEK_SET)
+                               ;; Update the bytestructure with actual sizes
+                               (bytestructure-set! wav-header 'filesize file-size)
+                               (bytestructure-set! wav-header 'data-chunk-size data-size)
+                               (put-bytevector port (bytestructure-unwrap wav-header))))
+                           ;; Verify MD5 if enabled
+                           (when (and gcrypt-available? (verify-md5?) (current-md5-bytevectors))
+                             (let* ((all-samples (apply bytevector-append (reverse (current-md5-bytevectors))))
+                                    (computed-hash (compute-md5-hash all-samples))
+                                    (expected-md5 (stream-info-md5 stream-info))
+                                    ;; Check if expected MD5 is all zeros (means no checksum)
+                                    (has-checksum? (not (every zero? (bytevector->u8-list expected-md5)))))
+                               (when (and has-checksum? computed-hash)
+                                 (unless (bytevector=? computed-hash expected-md5)
+                                   ((md5-mismatch-handler)
+                                    (bytevector->hex-string expected-md5)
+                                    (bytevector->hex-string computed-hash)))))))
+                         ;; Continue decoding
+                         (begin
+                           ;; Accumulate frame bytevector if MD5 verification enabled
+                           (when (and gcrypt-available? (verify-md5?))
+                             (let ((frame-data (frame-samples->bytevector)))
+                               (current-md5-bytevectors (cons frame-data (current-md5-bytevectors)))))
+                           (parameterize ((current-output-port port))
+                             (write-frame))
+                           (loop (+ samples-written (assoc-ref (current-frame-header) 'blocksize)))))))
+                 (close-port port))
+               (lambda (key . args)
+                 (close-port port)
+                 (apply throw key args))))))))))
