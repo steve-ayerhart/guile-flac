@@ -140,10 +140,10 @@
          ;; Use WAVE_FORMAT_EXTENSIBLE when:
          ;; - More than 2 channels, OR
          ;; - Bits per sample differs from storage (e.g., 12-bit in 16-bit, 20-bit in 24-bit), OR
-         ;; - 24-bit samples (standard practice for 24-bit files)
+         ;; - 24-bit or 32-bit samples (standard practice, WAVE_FORMAT_PCM officially only supports ≤16-bit)
          (use-extensible? (or (> num-channels 2)
                               (not (= bits-per-sample storage-bits))
-                              (= bits-per-sample 24))))
+                              (>= bits-per-sample 24))))
     (if use-extensible?
         ;; WAVE_FORMAT_EXTENSIBLE
         (bytestructure

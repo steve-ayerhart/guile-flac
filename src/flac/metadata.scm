@@ -122,15 +122,17 @@
 
 (define* (read-flac-metadata #:optional (search-type #f))
   "Read all metadata blocks from the FLAC stream and return them as a list.
-   The list is in the order they appear in the file (stream-info first, per spec).
+   The list is in the order they appear in the file.
    If search-type is provided, only that metadata type will be read (others skipped)."
-  (let metadata-loop ((metadata-list '()))
+  (let metadata-loop ((metadata-list '()) (is-first-block #t))
     (receive (last-block? block-type block-length)
         (read-metadata-block-header)
+      (when (and is-first-block (not (eq? block-type 'stream-info)))
+        (error "FLAC format violation: first metadata block must be STREAMINFO" block-type))
       (let ((block (read-metadata-block (resolve-block-type search-type block-type) block-length)))
         (if last-block?
             (reverse (if block (cons block metadata-list) metadata-list))
-            (metadata-loop (if block (cons block metadata-list) metadata-list)))))))
+            (metadata-loop (if block (cons block metadata-list) metadata-list) #f))))))
 
 (define* (flac-file-metadata filename #:optional (search-type #f))
   (with-flac-input-port

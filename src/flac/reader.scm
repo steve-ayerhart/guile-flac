@@ -103,12 +103,36 @@
            (bitwise-arithmetic-shift-right unsigned-val 1)
            (* -1 (bitwise-and unsigned-val 1)))))))
 
-(define (flac-read/assert-magic)
-  "Read and verify the FLAC magic number. Throws an error if not a valid FLAC stream."
+(define* (flac-read/assert-magic #:key (max-scan-bytes 65536))
+  "Find and verify the FLAC magic number, positioning the reader at the start of FLAC metadata.
+   Scans up to max-scan-bytes for the marker if not found at current position."
   (let ((magic (flac-read-uint 32)))
-    (unless (= FLAC-MAGIC magic)
-      (error "Not a valid FLAC stream - invalid magic number"
-             (format #f "Expected 0x~x, got 0x~x" FLAC-MAGIC magic)))))
+    (if (= FLAC-MAGIC magic)
+        #t
+        (let* ((reader (current-flac-reader))
+               (port (flac-reader-port reader)))
+          (set-flac-reader-bit-buffer! reader 0)
+          (set-flac-reader-bit-buffer-length! reader 0)
+          (let scan-loop ((bytes-scanned 4))
+            (if (>= bytes-scanned max-scan-bytes)
+                (error "Not a valid FLAC stream - magic marker not found"
+                       (format #f "Scanned ~a bytes" max-scan-bytes))
+                (let ((byte (get-u8 port)))
+                  (cond
+                   ((eof-object? byte)
+                    (error "Not a valid FLAC stream - reached EOF"))
+                   ((= byte #x66)
+                    (let ((b1 (get-u8 port))
+                          (b2 (get-u8 port))
+                          (b3 (get-u8 port)))
+                      (if (and (= b1 #x4C) (= b2 #x61) (= b3 #x43))
+                          (begin
+                            (format (current-error-port)
+                                    "Found FLAC marker at offset ~a\n"
+                                    (- bytes-scanned 3))
+                            #t)
+                          (scan-loop (+ bytes-scanned 4)))))
+                   (else (scan-loop (+ bytes-scanned 1)))))))))))
 
 (define (flac-read-coded-number)
   "Read a UTF-8-style variable-length coded number from the FLAC stream.

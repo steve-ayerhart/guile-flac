@@ -313,14 +313,22 @@
          (raw-blocksize (flac-read-uint 4))
          (raw-sample-rate (flac-read-uint 4))
          (channel-assignment (decode-channel-assignment (flac-read-uint 4)))
-         (bits-per-sample (decode-bits-per-sample (flac-read-uint 3)))
+         (bits-per-sample-raw (decode-bits-per-sample (flac-read-uint 3)))
          (ignore-reserved (flac-read-uint 1))
          (frame/sample-number (flac-read-coded-number))
          (blocksize (decode-block-size raw-blocksize))
          (sample-rate (decode-sample-rate raw-sample-rate))
          (crc (flac-read-uint 8)))
-    (set-current-frame-header-fields!
-     blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc)))
+
+    (when (eq? blocksize 'reserved)
+      (error "FLAC frame header contains reserved blocksize value"))
+    (when (eq? sample-rate 'invalid)
+      (error "FLAC frame header contains invalid sample rate value"))
+    (let ((bits-per-sample (if (eq? bits-per-sample-raw 'reserved)
+                                (stream-info-bits-per-sample (current-stream-info))
+                                bits-per-sample-raw)))
+      (set-current-frame-header-fields!
+       blocking-strategy blocksize sample-rate channel-assignment bits-per-sample frame/sample-number crc))))
 
 (define (read-frame)
   (read-frame-header)
