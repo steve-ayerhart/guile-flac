@@ -1,6 +1,8 @@
 SCM_TESTS = \
 	ietf-decoding-examples.scm \
-	subset-tests.scm
+	subset-tests.scm \
+    faulty-tests.scom \
+    uncommon-tests.scm
 
 TESTS = ${SCM_TESTS}
 
@@ -13,8 +15,6 @@ AM_TESTS_ENVIRONMENT = \
 	TERM=xterm; export TERM; \
 	GUILE_AUTO_COMPILE=0; export GUILE_AUTO_COMPILE;
 
-# LOG_COMPILER was introduced in Automake 1.12; don't expect "make
-# check" or "make distcheck" to work with earlier versions.
 SCM_LOG_COMPILER = \
 	$(GUILE)
 
