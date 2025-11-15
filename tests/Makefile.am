@@ -1,7 +1,7 @@
 SCM_TESTS = \
 	ietf-decoding-examples.scm \
 	subset-tests.scm \
-    faulty-tests.scom \
+    faulty-tests.scm \
     uncommon-tests.scm
 
 TESTS = ${SCM_TESTS}
